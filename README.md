@@ -41,6 +41,23 @@ npm run build    # type-check + production bundle
 The app imports the engine from the sibling `engine/` directory via a Vite alias
 (`@engine`), so the engine stays shared rather than copied.
 
+## Cloudflare Pages
+
+This project deploys as a static Cloudflare Pages site; no Workers or Pages
+Functions are required for blur graph generation. The graph/math path is handled
+by the framework-agnostic engine in `engine/` and bundled into the Vite client.
+
+Use these Pages build settings from the connected GitHub repository:
+
+| Setting | Value |
+|---------|-------|
+| Root directory | repository root |
+| Build command | `cd app && npm ci && npm run build` |
+| Build output directory | `app/dist` |
+
+The root `wrangler.toml` records `app/dist` as the Pages output directory, and
+`app/public/_redirects` preserves client-side routing on Cloudflare Pages.
+
 ## Credits
 
 Original concept and calculator by [maakbaas](https://github.com/maakbaas/how-much-blur);
