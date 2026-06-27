@@ -57,6 +57,8 @@ Use these Pages build settings from the connected GitHub repository:
 
 The root `wrangler.toml` records `app/dist` as the Pages output directory, and
 `app/public/_redirects` preserves client-side routing on Cloudflare Pages.
+The root `package.json` also supports Pages projects currently configured with
+`bun run build`; that command delegates to the same app build above.
 
 ## Credits
 

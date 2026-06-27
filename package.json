@@ -1,0 +1,8 @@
+{
+  "name": "compareblur",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "cd app && npm ci && npm run build"
+  }
+}
