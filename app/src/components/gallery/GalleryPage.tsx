@@ -1,5 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
-import { AnimatePresence } from 'framer-motion';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { getFormat } from '../../lib/engine';
 import { categoryForFormat, type CategoryId } from '../../lib/categories';
 import { GALLERY_SEED } from '../../data/gallery.seed';
@@ -36,6 +35,18 @@ export function GalleryPage() {
   const [busy, setBusy] = useState(false);
   const objectUrl = useRef<string | null>(null);
 
+  // live registry of grid-thumbnail DOM nodes, so the lightbox can morph open
+  // from / closed to whichever image is currently selected.
+  const anchors = useRef(new Map<string, HTMLElement>());
+  const registerAnchor = useCallback((id: string, el: HTMLElement | null) => {
+    if (el) anchors.current.set(id, el);
+    else anchors.current.delete(id);
+  }, []);
+  const getAnchorRect = useCallback(
+    (id: string) => anchors.current.get(id)?.getBoundingClientRect() ?? null,
+    [],
+  );
+
   const filtered = useMemo(() => {
     return GALLERY_SEED.filter((item) => {
       if (formats.size > 0) {
@@ -65,7 +76,10 @@ export function GalleryPage() {
     }
   };
 
-  const closeView = () => setView(null);
+  const closeView = () => {
+    setView(null);
+    revoke();
+  };
 
   const onSelectCard = (item: GalleryItem) => {
     revoke();
@@ -113,18 +127,22 @@ export function GalleryPage() {
         resultCount={filtered.length}
       />
       <UploadBox onFile={onFile} busy={busy} />
-      <GalleryGrid items={filtered} onSelect={onSelectCard} activeId={activeId} />
+      <GalleryGrid
+        items={filtered}
+        onSelect={onSelectCard}
+        activeId={activeId}
+        registerAnchor={registerAnchor}
+      />
 
-      <AnimatePresence onExitComplete={revoke}>
-        {view && (
-          <Lightbox
-            list={view.list}
-            index={view.index}
-            onIndex={(i) => setView((v) => (v ? { ...v, index: i } : v))}
-            onClose={closeView}
-          />
-        )}
-      </AnimatePresence>
+      {view && (
+        <Lightbox
+          list={view.list}
+          index={view.index}
+          onIndex={(i) => setView((v) => (v ? { ...v, index: i } : v))}
+          onClose={closeView}
+          getAnchorRect={getAnchorRect}
+        />
+      )}
     </div>
   );
 }
