@@ -10,7 +10,7 @@ declare module '@engine' {
     w: number;
     h: number;
     mp?: number;
-    family?: 'digital' | 'film' | 'pano' | 'crop' | string;
+    family?: 'digital' | 'film' | 'pano' | 'crop' | 'phone' | 'detected' | string;
   }
 
   export interface System {
@@ -57,6 +57,11 @@ declare module '@engine' {
     aspectW: number,
     aspectH: number,
   ): Format & { croppedFrom: string; mpRetained?: number };
+  export function sensorFormat(w: number, h: number, opts?: { name?: string; id?: string }): Format;
+  export function cropFactorFormat(
+    cf: number,
+    opts?: { ar?: number; name?: string; id?: string },
+  ): Format;
 
   export function sensorDim(fmt: Format, axis?: Axis): number;
   export function fieldOfView(focal: number, fmt: Format): Fov;

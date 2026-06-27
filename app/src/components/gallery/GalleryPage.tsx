@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
+import { getFormat } from '../../lib/engine';
 import { categoryForFormat, type CategoryId } from '../../lib/categories';
 import { GALLERY_SEED } from '../../data/gallery.seed';
 import type { GalleryItem, ViewEntry } from '../../lib/types';
@@ -15,7 +16,7 @@ function toEntry(item: GalleryItem): ViewEntry {
     title: item.title,
     metaLine: `${item.camera} · ${item.lens}`,
     src: item.src,
-    formatId: item.formatId,
+    format: getFormat(item.formatId),
     focal: item.focal,
     aperture: item.aperture,
     guessed: false,
@@ -86,7 +87,7 @@ export function GalleryPage() {
         title: file.name,
         metaLine: `${camera} · ${lens}${exif.aperture ? ` · ƒ/${exif.aperture}` : ''}`,
         src: preview,
-        formatId: exif.formatId,
+        format: exif.format,
         focal: exif.focal ?? exif.focal35 ?? 50,
         aperture: exif.aperture ?? 1.8,
         guessed: exif.guessedFormat,

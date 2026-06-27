@@ -1,4 +1,5 @@
 // App-level data shapes (engine optical types come from lib/engine.ts).
+import type { Format } from './engine';
 
 export type LensType = 'prime' | 'zoom';
 
@@ -38,7 +39,7 @@ export interface ExtractedExif {
   height?: number;
   /** true when we had to fall back to a guess rather than read it cleanly */
   guessedFormat: boolean;
-  formatId: string; // best-guess engine format id
+  format: Format; // resolved capture format (may be synthesized from crop factor)
 }
 
 // A single viewable thing in the lightbox — built from either a gallery item or
@@ -48,7 +49,7 @@ export interface ViewEntry {
   title: string;
   metaLine: string;
   src: string;
-  formatId: string;
+  format: Format;
   focal: number;
   aperture: number;
   guessed: boolean;

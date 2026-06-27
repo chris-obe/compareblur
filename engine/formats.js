@@ -33,6 +33,14 @@ export const FORMATS = [
   { id: 'xpan',       name: 'Hasselblad XPan / Fuji TX (24×65)', w: 65,  h: 24, family: 'pano' },
   { id: 'film-617',   name: 'Fuji GX617 (6×17)',     w: 168,  h: 56,  family: 'pano' },
   { id: 'film-612',   name: '6×12',                  w: 112,  h: 56,  family: 'pano' },
+
+  // --- Phone sensor classes (the "type" inch convention; 4:3) ---
+  // Mostly a manual-picker convenience: real phone shots are detected exactly
+  // from EXIF FocalLengthIn35mmFormat, which also knows which lens was used.
+  { id: 'phone-1in',   name: 'Phone 1″ (Xperia/Xiaomi main)', w: 13.2, h: 8.8,  family: 'phone' },
+  { id: 'phone-1-1.28', name: 'Phone 1/1.28″ (iPhone Pro main)', w: 9.8, h: 7.35, family: 'phone' },
+  { id: 'phone-1-1.7', name: 'Phone 1/1.7″',          w: 7.53, h: 5.64, family: 'phone' },
+  { id: 'phone-1-2.55', name: 'Phone 1/2.55″ (classic iPhone)', w: 5.02, h: 3.76, family: 'phone' },
 ];
 
 const BY_ID = new Map(FORMATS.map((f) => [f.id, f]));
@@ -51,6 +59,41 @@ export function diagonal(fmt) {
 /** Classic crop factor: diagonal of full frame ÷ diagonal of this format. */
 export function cropFactor(fmt) {
   return diagonal(FULL_FRAME) / diagonal(fmt);
+}
+
+/**
+ * Build an exact format from physical sensor dimensions (mm). Used when EXIF
+ * focal-plane resolution gives us the real sensor size.
+ * @returns {Format}
+ */
+export function sensorFormat(w, h, { name, id } = {}) {
+  return {
+    id: id ?? `sensor-${round(w, 2)}x${round(h, 2)}`,
+    name: name ?? `${round(w, 2)}×${round(h, 2)} mm`,
+    w: round(w, 2),
+    h: round(h, 2),
+    family: 'detected',
+  };
+}
+
+/**
+ * Build an exact format from a crop factor (FF diagonal ÷ sensor diagonal) and
+ * an aspect ratio (w/h). This is the on-demand path for phones: the crop factor
+ * comes straight from EXIF FocalLengthIn35mmFormat ÷ FocalLength, so it's exact
+ * and lens-aware (wide vs ultrawide vs tele) without any device database.
+ * @returns {Format}
+ */
+export function cropFactorFormat(cf, { ar = 4 / 3, name, id } = {}) {
+  const diag = diagonal(FULL_FRAME) / cf;
+  const h = diag / Math.hypot(ar, 1);
+  const w = h * ar;
+  return {
+    id: id ?? `crop-${round(cf, 3)}`,
+    name: name ?? `${round(cf, 2)}× crop`,
+    w: round(w, 2),
+    h: round(h, 2),
+    family: 'detected',
+  };
 }
 
 export function aspectRatio(fmt) {

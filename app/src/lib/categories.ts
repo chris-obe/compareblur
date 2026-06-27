@@ -2,7 +2,7 @@ import { FORMATS, type Format } from './engine';
 
 // UI-facing format categories for the gallery filter. Maps engine format ids /
 // families to the human buckets the user asked for. Easy to extend.
-export type CategoryId = 'ff' | 'medium' | 'apsc' | 'mft' | 'pano';
+export type CategoryId = 'ff' | 'medium' | 'apsc' | 'mft' | 'pano' | 'phone';
 
 export interface Category {
   id: CategoryId;
@@ -16,6 +16,7 @@ const MEMBERS: Record<CategoryId, string[]> = {
   apsc: ['apsc', 'apsc-canon'],
   mft: ['mft'],
   pano: ['xpan', 'film-617', 'film-612'],
+  phone: ['phone-1in', 'phone-1-1.28', 'phone-1-1.7', 'phone-1-2.55'],
 };
 
 export const CATEGORIES: Category[] = [
@@ -24,6 +25,7 @@ export const CATEGORIES: Category[] = [
   { id: 'apsc', label: 'APS-C', formatIds: MEMBERS.apsc },
   { id: 'mft', label: 'MFT', formatIds: MEMBERS.mft },
   { id: 'pano', label: 'Panorama', formatIds: MEMBERS.pano },
+  { id: 'phone', label: 'Phone', formatIds: MEMBERS.phone },
 ];
 
 const FORMAT_TO_CATEGORY = new Map<string, CategoryId>();

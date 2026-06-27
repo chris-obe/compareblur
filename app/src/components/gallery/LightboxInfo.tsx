@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Check, AlertTriangle, Ban } from 'lucide-react';
-import { FORMATS } from '../../lib/engine';
+import { FORMATS, type Format } from '../../lib/engine';
 import { computeMatch } from '../../lib/match';
 import { useKit } from '../../store/KitProvider';
 import type { ViewEntry } from '../../lib/types';
@@ -20,17 +20,24 @@ function Stat({ label, value }: { label: string; value: string }) {
 // resets whenever the viewed entry changes.
 export function LightboxInfo({ entry }: { entry: ViewEntry }) {
   const { kit } = useKit();
-  const [formatId, setFormatId] = useState(entry.formatId);
+  const [format, setFormat] = useState<Format>(entry.format);
   const [focal, setFocal] = useState(entry.focal);
   const [aperture, setAperture] = useState(entry.aperture);
 
   useEffect(() => {
-    setFormatId(entry.formatId);
+    setFormat(entry.format);
     setFocal(entry.focal);
     setAperture(entry.aperture);
   }, [entry]);
 
-  const m = computeMatch(formatId, focal, aperture, kit);
+  // Include the detected format in the dropdown when it's a synthesized one
+  // (phones / focal-plane sensors aren't in the static list).
+  const options = useMemo<Format[]>(() => {
+    const known = FORMATS.some((f) => f.id === entry.format.id);
+    return known ? FORMATS : [entry.format, ...FORMATS];
+  }, [entry.format]);
+
+  const m = computeMatch(format, focal, aperture, kit);
   const verdict = m.kitEval.verdict;
   const vmap = {
     covered: { Icon: Check, label: 'In your kit' },
@@ -53,11 +60,14 @@ export function LightboxInfo({ entry }: { entry: ViewEntry }) {
           <label className="flex flex-col gap-1">
             <span className="label">Format</span>
             <select
-              value={formatId}
-              onChange={(e) => setFormatId(e.target.value)}
+              value={format.id}
+              onChange={(e) => {
+                const next = options.find((f) => f.id === e.target.value);
+                if (next) setFormat(next);
+              }}
               className="border border-line bg-transparent px-2 py-1.5 text-xs outline-none focus:border-line-strong"
             >
-              {FORMATS.map((f) => (
+              {options.map((f) => (
                 <option key={f.id} value={f.id}>
                   {f.name}
                 </option>

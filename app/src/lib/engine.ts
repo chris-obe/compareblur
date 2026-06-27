@@ -8,6 +8,8 @@ export {
   cropFactor,
   aspectRatio,
   cropToAspect,
+  sensorFormat,
+  cropFactorFormat,
   sensorDim,
   fieldOfView,
   focalForFov,
