@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Check, AlertTriangle, Ban } from 'lucide-react';
-import { FORMATS, type Format } from '../../lib/engine';
+import { FORMATS, cropFactor, type Format } from '../../lib/engine';
 import { computeMatch } from '../../lib/match';
 import { useKit } from '../../store/KitProvider';
 import type { ViewEntry } from '../../lib/types';
@@ -95,6 +95,23 @@ export function LightboxInfo({ entry }: { entry: ViewEntry }) {
               className="border border-line bg-transparent px-2 py-1.5 text-xs outline-none focus:border-line-strong"
             />
           </label>
+        </div>
+      </div>
+
+      {/* the two headline calculated numbers */}
+      <div className="grid grid-cols-2 gap-2">
+        <div className="border border-line-strong p-4">
+          <div className="label mb-2">Sensor</div>
+          <div className="text-xl font-bold tracking-tight tabular-nums">
+            {format.w} × {format.h}
+            <span className="text-xs font-normal text-muted"> mm</span>
+          </div>
+        </div>
+        <div className="border border-line-strong p-4">
+          <div className="label mb-2">Crop factor</div>
+          <div className="text-xl font-bold tracking-tight tabular-nums">
+            {cropFactor(format).toFixed(2)}×
+          </div>
         </div>
       </div>
 
