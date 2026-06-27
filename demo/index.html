@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>howmuchblur — engine reference demo</title>
+<style>
+  :root { color-scheme: light dark; font-family: ui-sans-serif, system-ui, sans-serif; }
+  body { max-width: 760px; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; }
+  h1 { font-size: 1.4rem; } h2 { font-size: 1.05rem; margin-top: 2rem; }
+  fieldset { border: 1px solid #8884; border-radius: 8px; margin: 0 0 1rem; padding: 1rem; }
+  label { display: inline-flex; flex-direction: column; font-size: .8rem; margin: 0 .6rem .6rem 0; }
+  input, select { padding: .35rem; font-size: .95rem; }
+  .out { background: #8881; border-radius: 8px; padding: 1rem; white-space: pre-wrap;
+         font-family: ui-monospace, monospace; font-size: .85rem; }
+  .big { font-size: 1.1rem; font-weight: 600; }
+  small { opacity: .7; }
+</style>
+</head>
+<body>
+  <h1>howmuchblur — engine reference</h1>
+  <small>Not the final UI. This wires the new engine to inputs so the physics is verifiable. The real interface comes from the design prompt.</small>
+
+  <h2>Match blur &amp; field of view across formats</h2>
+  <fieldset>
+    <label>Source format
+      <select id="srcFmt"></select></label>
+    <label>Focal length (mm)
+      <input id="srcFocal" type="number" value="90" min="1" /></label>
+    <label>Aperture f/
+      <input id="srcAp" type="number" value="4" step="0.1" min="0.7" /></label>
+    <br />
+    <label>Target format
+      <select id="tgtFmt"></select></label>
+    <label>Match axis
+      <select id="axis">
+        <option value="h">Horizontal FOV (best for panoramas)</option>
+        <option value="d">Diagonal (classic crop-factor)</option>
+        <option value="v">Vertical</option>
+      </select></label>
+  </fieldset>
+  <div class="out" id="matchOut"></div>
+
+  <h2>Crop a sensor to a panoramic shape</h2>
+  <fieldset>
+    <label>Base format
+      <select id="cropBase"></select></label>
+    <label>Aspect W <input id="arW" type="number" value="65" /></label>
+    <label>Aspect H <input id="arH" type="number" value="24" /></label>
+  </fieldset>
+  <div class="out" id="cropOut"></div>
+
+<script type="module">
+import { FORMATS, getFormat, cropToAspect, cropFactor } from '../engine/index.js';
+import { matchSystem } from '../engine/index.js';
+
+const opts = (sel, selectedId) => {
+  sel.innerHTML = FORMATS.map(f => `<option value="${f.id}"${f.id===selectedId?' selected':''}>${f.name}</option>`).join('');
+};
+['srcFmt','tgtFmt','cropBase'].forEach(id => opts(document.getElementById(id)));
+document.getElementById('srcFmt').value = 'xpan';
+document.getElementById('tgtFmt').value = 'ff';
+document.getElementById('cropBase').value = 'ff';
+
+function renderMatch() {
+  const src = { format: getFormat(srcFmt.value), focal: +srcFocal.value, aperture: +srcAp.value };
+  const m = matchSystem(src, getFormat(tgtFmt.value), { axis: axis.value });
+  matchOut.innerHTML =
+`<span class="big">Use ${m.target.focal} mm at f/${m.target.apertureNearest}</span>
+on ${m.target.format.name}
+
+to match ${src.focal} mm f/${src.aperture} on ${src.format.name}.
+
+Field of view (matched on ${axis.value}):  source ${m.source.fov.h}°h / ${m.source.fov.v}°v   →   target ${m.target.fov.h}°h / ${m.target.fov.v}°v
+Entrance pupil (the blur driver): ${m.entrancePupilMm} mm — identical for both.
+Full-frame equivalent of source: ${m.fullFrameEquivalent.focal} mm f/${m.fullFrameEquivalent.aperture}`;
+}
+
+function renderCrop() {
+  const base = getFormat(cropBase.value);
+  const c = cropToAspect(base, +arW.value, +arH.value);
+  cropOut.innerHTML =
+`<span class="big">${c.w} × ${c.h} mm${c.mpRetained ? `,  ~${c.mpRetained} MP retained` : ''}</span>
+Cropping ${base.name} (${base.w}×${base.h}${base.mp?`, ${base.mp}MP`:''}) to ${arW}:${arH}.`;
+}
+
+document.querySelectorAll('input,select').forEach(el => el.addEventListener('input', () => { renderMatch(); renderCrop(); }));
+renderMatch(); renderCrop();
+</script>
+</body>
+</html>

@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>howmuchblur — render, don't graph (concept)</title>
+<style>
+  :root{
+    --bg:#161210; --panel:#1e1815; --ink:#f3ece4; --muted:#b3a596;
+    --amber:#f5a623; --amber-dim:#7a5a22; --line:#352c25;
+    font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:
+      radial-gradient(120% 80% at 50% -10%, #2a1f16 0%, var(--bg) 55%);
+      color:var(--ink);min-height:100vh;display:flex;justify-content:center;}
+  .wrap{width:min(960px,100%);padding:clamp(16px,3vw,40px);}
+  .kicker{font-size:.72rem;letter-spacing:.22em;text-transform:uppercase;color:var(--amber);opacity:.85}
+  h1{font-size:clamp(1.4rem,3vw,2rem);font-weight:650;letter-spacing:-.02em;margin:.4rem 0 .2rem}
+  .sub{color:var(--muted);max-width:52ch;margin:0 0 1.4rem;line-height:1.5}
+
+  .stage{position:relative;aspect-ratio:16/10;border:1px solid var(--line);border-radius:14px;
+         overflow:hidden;background:#0d0a08}
+  canvas{width:100%;height:100%;display:block}
+  /* the answer, magazine-caption style, laid over the image */
+  .caption{position:absolute;left:0;right:0;bottom:0;padding:18px 20px 16px;
+           background:linear-gradient(transparent, rgba(8,6,4,.86) 55%);font-size:clamp(1rem,2.2vw,1.35rem);
+           line-height:1.3;font-weight:600;letter-spacing:-.01em}
+  .caption b{color:var(--amber);font-weight:700}
+  .frameTag{position:absolute;top:14px;left:16px;font-size:.7rem;letter-spacing:.18em;
+            text-transform:uppercase;color:var(--muted);border:1px solid var(--line);
+            padding:4px 8px;border-radius:6px;background:rgba(13,10,8,.6)}
+
+  .controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin-top:18px}
+  .ctl{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+  .ctl label{display:block;font-size:.68rem;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
+  .val{font-variant-numeric:tabular-nums;font-weight:650;font-size:1.05rem}
+  input[type=range]{width:100%;accent-color:var(--amber);margin-top:6px}
+  select{width:100%;background:#120e0c;color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px}
+  .proof{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+  .chip{font-size:.74rem;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:5px 11px;background:var(--panel)}
+  .chip b{color:var(--ink);font-variant-numeric:tabular-nums}
+  .match{margin-top:18px;background:linear-gradient(180deg,#241a12,#1c1510);border:1px solid var(--amber-dim);
+         border-radius:12px;padding:14px 16px;display:flex;align-items:center;gap:14px;justify-content:space-between;flex-wrap:wrap}
+  .match .big{font-size:1.05rem;font-weight:650}
+  .match .big b{color:var(--amber)}
+  .note{color:var(--muted);font-size:.8rem;margin-top:8px;line-height:1.5}
+  button{background:var(--amber);color:#1a1206;border:0;border-radius:9px;padding:9px 14px;font-weight:700;cursor:pointer}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="kicker">Concept · render the look, don't graph it</div>
+  <h1>Scrub the blur. Feel the format.</h1>
+  <p class="sub">The same engine, but the answer is the <em>image</em>. Open the aperture and the
+  background melts into bokeh. Pick a target format and watch the look stay identical — that's the
+  equivalence law, made visible instead of plotted.</p>
+
+  <div class="stage">
+    <canvas id="cv" width="960" height="600"></canvas>
+    <div class="frameTag" id="frameTag">FULL FRAME · 3:2</div>
+    <div class="caption" id="caption"></div>
+  </div>
+
+  <div class="controls">
+    <div class="ctl">
+      <label>Format</label>
+      <select id="fmt"></select>
+    </div>
+    <div class="ctl">
+      <label>Focal length · <span class="val" id="focalV">85</span> mm</label>
+      <input id="focal" type="range" min="16" max="200" value="85" />
+    </div>
+    <div class="ctl">
+      <label>Aperture · ƒ/<span class="val" id="apV">1.8</span></label>
+      <input id="ap" type="range" min="0" max="22" value="6" />
+    </div>
+    <div class="ctl">
+      <label>Background · <span class="val" id="bgV">12</span> m</label>
+      <input id="bg" type="range" min="3" max="80" value="12" />
+    </div>
+  </div>
+
+  <div class="proof" id="proof"></div>
+
+  <div class="match">
+    <div>
+      <div class="big" id="matchSentence"></div>
+      <div class="note">Press to render the matched system in the frame above — the blur should not change.</div>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center">
+      <select id="tgt" style="width:auto"></select>
+      <button id="applyMatch">Match it →</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { FORMATS, getFormat, matchSystem, fieldOfView,
+         focusDistanceForFraming, blurFraction } from '../engine/index.js';
+
+const $ = id => document.getElementById(id);
+const cv = $('cv'), ctx = cv.getContext('2d');
+
+// scene constants
+const SUBJECT_WIDTH_M = 2;     // we frame a ~2m wide subject
+const W = cv.width, H = cv.height;
+
+// pre-scatter background "highlights" — these become bokeh discs when blurred
+const lights = Array.from({length: 46}, (_, i) => ({
+  x: (Math.sin(i*12.9898)*43758.5453 % 1 + 1) % 1,
+  y: (Math.sin(i*78.233)*12345.678 % 1 + 1) % 1,
+  r: 6 + ((Math.sin(i*3.7)*1000 % 1 + 1) % 1) * 16,
+  h: 28 + ((Math.sin(i*9.1)*1000 % 1 + 1) % 1) * 22, // warm hues
+}));
+
+// populate format pickers
+for (const sel of [$('fmt'), $('tgt')]) {
+  sel.innerHTML = FORMATS.map(f => `<option value="${f.id}">${f.name}</option>`).join('');
+}
+$('fmt').value = 'ff';
+$('tgt').value = 'apsc';
+
+const F_STOPS = [1.0,1.2,1.4,1.8,2.0,2.8,3.5,4,5.6,8,11,16,22];
+let state = { fmtId:'ff', focal:85, apIdx:6, bg:12 };
+
+function current(){
+  return { format:getFormat(state.fmtId), focal:state.focal, aperture:F_STOPS[state.apIdx] };
+}
+
+function draw(){
+  const sys = current();
+  const aperture = sys.aperture;
+  const s = focusDistanceForFraming(sys.focal, sys.format, SUBJECT_WIDTH_M, 'h');
+  const frac = blurFraction(sys, s, state.bg);     // blur disc as fraction of frame width
+  const discPx = frac * W;                          // canvas width == frame width
+  const blurPx = Math.min(60, discPx / 2);
+
+  // --- background layer (blurred) ---
+  ctx.save();
+  ctx.filter = `blur(${blurPx}px)`;
+  const g = ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,'#241a12'); g.addColorStop(1,'#0d0a08');
+  ctx.fillStyle = g; ctx.fillRect(-80,-80,W+160,H+160);
+  for(const L of lights){
+    ctx.beginPath();
+    const rr = L.r * (1 + blurPx/22);              // discs grow as they blur — bokeh
+    ctx.fillStyle = `hsla(${L.h}, 85%, 62%, .9)`;
+    ctx.arc(L.x*W, L.y*H*0.92, rr, 0, 7);
+    ctx.fill();
+  }
+  ctx.restore();
+
+  // --- subject layer (sharp) ---
+  ctx.save();
+  // simple silhouette: shoulders + head, centered, in focus
+  ctx.fillStyle = '#0b0907';
+  ctx.beginPath();
+  ctx.arc(W*0.5, H*0.52, H*0.16, 0, 7);            // head
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(W*0.5, H*1.02, W*0.26, H*0.4, 0, 0, 7); // shoulders
+  ctx.fill();
+  // a thin rim light so the sharp subject reads against bokeh
+  ctx.strokeStyle = 'rgba(245,166,35,.5)'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(W*0.5, H*0.52, H*0.16, -2.4, -0.3); ctx.stroke();
+  ctx.restore();
+
+  // readouts
+  const fov = fieldOfView(sys.focal, sys.format);
+  $('focalV').textContent = sys.focal;
+  $('apV').textContent = aperture;
+  $('bgV').textContent = state.bg;
+  $('frameTag').textContent = `${sys.format.name.toUpperCase()} · ${trimAR(sys.format)}`;
+  $('caption').innerHTML =
+    `<b>${sys.focal} mm</b> at <b>ƒ/${aperture}</b> on ${sys.format.name} —
+     background melts to <b>${(frac*100).toFixed(1)}%</b> of the frame.`;
+  $('proof').innerHTML =
+    `<span class="chip">Horizontal FOV <b>${fov.h.toFixed(1)}°</b></span>
+     <span class="chip">Entrance pupil <b>${(sys.focal/aperture).toFixed(1)} mm</b></span>
+     <span class="chip">Focus distance <b>${s.toFixed(1)} m</b></span>`;
+  updateMatchSentence();
+}
+
+function trimAR(f){
+  const g=(a,b)=>b?g(b,a%b):a; const d=g(Math.round(f.w),Math.round(f.h));
+  return `${Math.round(f.w)/d}:${Math.round(f.h)/d}`;
+}
+
+function updateMatchSentence(){
+  const src = current();
+  const m = matchSystem(src, getFormat($('tgt').value), { axis:'h' });
+  $('matchSentence').innerHTML =
+    `Same look on ${m.target.format.name}: <b>${m.target.focal} mm at ƒ/${m.target.apertureNearest}</b>`;
+}
+
+// wiring
+$('fmt').onchange   = e => { state.fmtId = e.target.value; draw(); };
+$('focal').oninput  = e => { state.focal = +e.target.value; draw(); };
+$('ap').oninput     = e => { state.apIdx = Math.round(+e.target.value / 22 * (F_STOPS.length-1)); draw(); };
+$('bg').oninput     = e => { state.bg = +e.target.value; draw(); };
+$('tgt').onchange   = updateMatchSentence;
+$('applyMatch').onclick = () => {
+  const m = matchSystem(current(), getFormat($('tgt').value), { axis:'h' });
+  state.fmtId = m.target.format.id;
+  state.focal = Math.round(m.target.focal);
+  // snap aperture to nearest stop in our ladder
+  state.apIdx = F_STOPS.reduce((bi,_,i)=>Math.abs(F_STOPS[i]-m.target.aperture)<Math.abs(F_STOPS[bi]-m.target.aperture)?i:bi,0);
+  $('fmt').value = state.fmtId;
+  draw();
+};
+
+draw();
+</script>
+</body>
+</html>
