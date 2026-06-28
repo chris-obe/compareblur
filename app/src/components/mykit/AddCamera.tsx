@@ -2,12 +2,11 @@ import { useMemo, useState } from 'react';
 import { Plus } from 'lucide-react';
 import { CAMERAS, LENSES } from '../../data/gear.seed';
 import { lensesForCamera } from '../../lib/gear';
-import { groupByMaker } from '../../lib/group';
 import { useKit } from '../../store/KitProvider';
 import { LensMultiSelect } from './LensMultiSelect';
+import { SearchSelect } from '../ui/SearchSelect';
 
-const fieldCls =
-  'border border-line bg-transparent px-2 py-1.5 text-xs outline-none focus:border-line-strong';
+const cameraOptions = CAMERAS.map((c) => ({ id: c.id, label: c.name, maker: c.maker }));
 
 // Add a camera to the kit, optionally with several compatible lenses in one move.
 export function AddCamera() {
@@ -16,7 +15,6 @@ export function AddCamera() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const camera = CAMERAS.find((c) => c.id === camId)!;
-  const camGroups = useMemo(() => groupByMaker(CAMERAS), []);
   const compatible = useMemo(() => lensesForCamera(camera, LENSES), [camera]);
   const ownedOnMount = useMemo(
     () => new Set(lenses.filter((l) => l.mount === camera.mount && l.catalogId).map((l) => l.catalogId!)),
@@ -46,17 +44,7 @@ export function AddCamera() {
       <div className="grid grid-cols-2 gap-2">
         <label className="flex flex-col gap-1">
           <span className="label">Camera</span>
-          <select className={fieldCls} value={camId} onChange={(e) => onCam(e.target.value)}>
-            {camGroups.map(([maker, cams]) => (
-              <optgroup key={maker} label={maker}>
-                {cams.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </optgroup>
-            ))}
-          </select>
+          <SearchSelect options={cameraOptions} value={camId} onChange={onCam} placeholder="Search cameras…" />
         </label>
         <label className="flex flex-col gap-1">
           <span className="label">Lenses ({compatible.length} compatible)</span>

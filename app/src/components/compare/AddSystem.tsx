@@ -7,10 +7,12 @@ import { useKit } from '../../store/KitProvider';
 import { useCompare, nextSystemId, type CompareSystem } from '../../store/CompareProvider';
 import { NumberField } from '../ui/NumberField';
 import { groupByMaker } from '../../lib/group';
+import { SearchSelect } from '../ui/SearchSelect';
 
 type Mode = 'camera' | 'kit' | 'manual';
 
 const shortFmt = (f: Format) => f.name.replace(/\s*\(.*?\)\s*/g, '').trim();
+const cameraOptions = CAMERAS.map((c) => ({ id: c.id, label: c.name, maker: c.maker }));
 
 const fieldCls =
   'border border-line bg-transparent px-2 py-1.5 text-xs outline-none focus:border-line-strong';
@@ -70,7 +72,6 @@ function CameraMode({ onAdd }: { onAdd: (s: CompareSystem) => void }) {
   const [camId, setCamId] = useState(CAMERAS[0].id);
   const camera = CAMERAS.find((c) => c.id === camId)!;
   const available = useMemo(() => lensesForCamera(camera, LENSES), [camera]);
-  const camGroups = useMemo(() => groupByMaker(CAMERAS), []);
   const lensGroups = useMemo(() => groupByMaker(available), [available]);
   const [lensId, setLensId] = useState(available[0]?.id ?? '');
   const lens = available.find((l) => l.id === lensId) ?? available[0];
@@ -108,17 +109,7 @@ function CameraMode({ onAdd }: { onAdd: (s: CompareSystem) => void }) {
       <div className="grid grid-cols-2 gap-2">
         <label className="flex flex-col gap-1">
           <span className="label">Camera</span>
-          <select className={fieldCls} value={camId} onChange={(e) => onCam(e.target.value)}>
-            {camGroups.map(([maker, cams]) => (
-              <optgroup key={maker} label={maker}>
-                {cams.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </optgroup>
-            ))}
-          </select>
+          <SearchSelect options={cameraOptions} value={camId} onChange={onCam} placeholder="Search cameras…" />
         </label>
         <label className="flex flex-col gap-1">
           <span className="label">Lens ({available.length} available)</span>
