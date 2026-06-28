@@ -1,5 +1,5 @@
-import { Stub } from './Stub';
+import { ComparePage } from '../components/compare/ComparePage';
 
 export function Compare() {
-  return <Stub name="Compare — blur graph" />;
+  return <ComparePage />;
 }

@@ -4,6 +4,7 @@ import { BrowserRouter } from 'react-router-dom';
 import App from './App';
 import { ThemeProvider } from './store/ThemeProvider';
 import { KitProvider } from './store/KitProvider';
+import { CompareProvider } from './store/CompareProvider';
 import './index.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
@@ -11,7 +12,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     <BrowserRouter>
       <ThemeProvider>
         <KitProvider>
-          <App />
+          <CompareProvider>
+            <App />
+          </CompareProvider>
         </KitProvider>
       </ThemeProvider>
     </BrowserRouter>

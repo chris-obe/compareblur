@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Check, AlertTriangle, Ban, MoveDiagonal } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Check, AlertTriangle, Ban, MoveDiagonal, GitCompare } from 'lucide-react';
 import { FORMATS, cropFactor, diagonal, type Format } from '../../lib/engine';
 import { computeMatch } from '../../lib/match';
 import { useKit } from '../../store/KitProvider';
+import { useCompare, nextSystemId } from '../../store/CompareProvider';
 import type { ViewEntry } from '../../lib/types';
 
 const r1 = (n: number) => Math.round(n * 10) / 10;
@@ -63,6 +65,8 @@ function SensorCell({ fmt }: { fmt: Format }) {
 // guesses), and everything recomputes live; resets when the viewed entry changes.
 export function LightboxInfo({ entry }: { entry: ViewEntry }) {
   const { kit } = useKit();
+  const { add: addToCompare } = useCompare();
+  const navigate = useNavigate();
   const [format, setFormat] = useState<Format>(entry.format);
   const [focal, setFocal] = useState(entry.focal);
   const [aperture, setAperture] = useState(entry.aperture);
@@ -146,6 +150,17 @@ export function LightboxInfo({ entry }: { entry: ViewEntry }) {
           </div>
         )}
       </div>
+
+      <button
+        type="button"
+        onClick={() => {
+          addToCompare({ id: nextSystemId(), context: entry.title, format, focal, aperture });
+          navigate('/compare');
+        }}
+        className="flex w-full items-center justify-center gap-2 border border-line px-3 py-2 text-xs uppercase tracking-wide transition-colors hover:border-line-strong"
+      >
+        <GitCompare size={14} strokeWidth={1.5} /> Compare this look
+      </button>
     </div>
   );
 }
