@@ -6,21 +6,11 @@ import { cameraFormat, defaultFocal, lensesForCamera, type CatalogLens } from '.
 import { useKit } from '../../store/KitProvider';
 import { useCompare, nextSystemId, type CompareSystem } from '../../store/CompareProvider';
 import { NumberField } from '../ui/NumberField';
+import { groupByMaker } from '../../lib/group';
 
 type Mode = 'camera' | 'kit' | 'manual';
 
 const shortFmt = (f: Format) => f.name.replace(/\s*\(.*?\)\s*/g, '').trim();
-
-// Group catalog items by maker, preserving first-seen order, for <optgroup>s.
-function groupByMaker<T extends { maker: string }>(items: T[]): [string, T[]][] {
-  const m = new Map<string, T[]>();
-  for (const it of items) {
-    const arr = m.get(it.maker);
-    if (arr) arr.push(it);
-    else m.set(it.maker, [it]);
-  }
-  return [...m.entries()];
-}
 
 const fieldCls =
   'border border-line bg-transparent px-2 py-1.5 text-xs outline-none focus:border-line-strong';

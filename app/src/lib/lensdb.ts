@@ -31,7 +31,8 @@ const MOUNT_MAP: Record<string, string> = {
 
 // A lens's image circle covers these sensor formats (used to scope by body).
 const COVERAGE: Record<string, string[]> = {
-  'Full Frame': ['ff', 'apsc', 'apsc-canon'],
+  // 35mm film (film-135) is 36×24 like full frame, so FF lenses cover it too.
+  'Full Frame': ['ff', 'apsc', 'apsc-canon', 'film-135'],
   'APS-C': ['apsc', 'apsc-canon'],
   MFT: ['mft'],
   'Medium Format': ['gfx'],

@@ -1,4 +1,5 @@
 import type { Camera } from '../lib/gear';
+import { LEGACY_CAMERAS } from './legacy.seed';
 
 // Mirrorless camera bodies, curated. Scoped to the mounts our (mirrorless)
 // LensDB catalog covers, so every body has real lenses available. Each carries
@@ -88,4 +89,7 @@ export const CAMERAS: Camera[] = [
     ['pana-gh7', 'Lumix GH7'], ['pana-g9', 'Lumix G9'], ['pana-g9ii', 'Lumix G9 II'],
     ['pana-gx9', 'Lumix GX9'], ['pana-g100', 'Lumix G100'],
   ]),
+
+  // DSLR & film bodies (curated)
+  ...LEGACY_CAMERAS,
 ];

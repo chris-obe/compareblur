@@ -1,5 +1,6 @@
 import type { CatalogLens } from '../lib/gear';
 import { LENSDB_LENSES } from '../lib/lensdb';
+import { LEGACY_LENSES } from './legacy.seed';
 
 // Camera bodies live in cameras.seed.ts (a comprehensive mirrorless dataset);
 // re-exported here so existing imports keep working.
@@ -14,4 +15,4 @@ const GF_LENSES: CatalogLens[] = [
   { id: 'gf-250-4', name: 'GF 250mm F4 R LM OIS WR', maker: 'Fujifilm', type: 'prime', focalMin: 250, focalMax: 250, apMax: 4, apMin: 32, mounts: ['G'], coversFormatIds: ['gfx'], af: true, thirdParty: false },
 ];
 
-export const LENSES: CatalogLens[] = [...LENSDB_LENSES, ...GF_LENSES];
+export const LENSES: CatalogLens[] = [...LENSDB_LENSES, ...GF_LENSES, ...LEGACY_LENSES];
