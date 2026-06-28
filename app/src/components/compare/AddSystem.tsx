@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Plus } from 'lucide-react';
 import { FORMATS, getFormat, type Format } from '../../lib/engine';
 import { CAMERAS, LENSES } from '../../data/gear.seed';
-import { cameraFormat, defaultFocal, lensesForCamera, type CatalogLens } from '../../lib/gear';
+import { cameraFormat, defaultFocal, lensesForCamera, type Camera, type CatalogLens } from '../../lib/gear';
 import { useKit } from '../../store/KitProvider';
 import { useCompare, nextSystemId, type CompareSystem } from '../../store/CompareProvider';
 import { NumberField } from '../ui/NumberField';
@@ -70,6 +70,15 @@ function CameraMode({ onAdd }: { onAdd: (s: CompareSystem) => void }) {
   const [camId, setCamId] = useState(CAMERAS[0].id);
   const camera = CAMERAS.find((c) => c.id === camId)!;
   const available = useMemo(() => lensesForCamera(camera, LENSES), [camera]);
+  const camGroups = useMemo(() => {
+    const m = new Map<string, Camera[]>();
+    for (const c of CAMERAS) {
+      const arr = m.get(c.maker);
+      if (arr) arr.push(c);
+      else m.set(c.maker, [c]);
+    }
+    return [...m.entries()];
+  }, []);
   const [lensId, setLensId] = useState(available[0]?.id ?? '');
   const lens = available.find((l) => l.id === lensId) ?? available[0];
 
@@ -107,10 +116,14 @@ function CameraMode({ onAdd }: { onAdd: (s: CompareSystem) => void }) {
         <label className="flex flex-col gap-1">
           <span className="label">Camera</span>
           <select className={fieldCls} value={camId} onChange={(e) => onCam(e.target.value)}>
-            {CAMERAS.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
+            {camGroups.map(([maker, cams]) => (
+              <optgroup key={maker} label={maker}>
+                {cams.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </optgroup>
             ))}
           </select>
         </label>

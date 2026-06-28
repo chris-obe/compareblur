@@ -1,26 +1,9 @@
-import type { Camera, CatalogLens } from '../lib/gear';
+import type { CatalogLens } from '../lib/gear';
 import { LENSDB_LENSES } from '../lib/lensdb';
 
-// Camera bodies are curated here (LensDB is lenses-only). Mounts: E (Sony),
-// Z (Nikon), RF (Canon), L (L-mount), X (Fuji APS-C), G (Fuji GFX), MFT.
-export const CAMERAS: Camera[] = [
-  { id: 'sony-a7iv', name: 'Sony α7 IV', maker: 'Sony', mount: 'E', formatId: 'ff' },
-  { id: 'sony-a1', name: 'Sony α1', maker: 'Sony', mount: 'E', formatId: 'ff' },
-  { id: 'sony-a6700', name: 'Sony α6700', maker: 'Sony', mount: 'E', formatId: 'apsc' },
-  { id: 'nikon-z6iii', name: 'Nikon Z6 III', maker: 'Nikon', mount: 'Z', formatId: 'ff' },
-  { id: 'nikon-z8', name: 'Nikon Z8', maker: 'Nikon', mount: 'Z', formatId: 'ff' },
-  { id: 'nikon-zfc', name: 'Nikon Z fc', maker: 'Nikon', mount: 'Z', formatId: 'apsc' },
-  { id: 'canon-r6ii', name: 'Canon EOS R6 II', maker: 'Canon', mount: 'RF', formatId: 'ff' },
-  { id: 'canon-r5ii', name: 'Canon EOS R5 II', maker: 'Canon', mount: 'RF', formatId: 'ff' },
-  { id: 'canon-r7', name: 'Canon EOS R7', maker: 'Canon', mount: 'RF', formatId: 'apsc-canon' },
-  { id: 'pana-s5ii', name: 'Panasonic Lumix S5 II', maker: 'Panasonic', mount: 'L', formatId: 'ff' },
-  { id: 'leica-sl3', name: 'Leica SL3', maker: 'Leica', mount: 'L', formatId: 'ff' },
-  { id: 'sigma-fp', name: 'Sigma fp', maker: 'Sigma', mount: 'L', formatId: 'ff' },
-  { id: 'fuji-xt5', name: 'Fujifilm X-T5', maker: 'Fujifilm', mount: 'X', formatId: 'apsc' },
-  { id: 'fuji-xh2', name: 'Fujifilm X-H2', maker: 'Fujifilm', mount: 'X', formatId: 'apsc' },
-  { id: 'fuji-gfx100ii', name: 'Fujifilm GFX100 II', maker: 'Fujifilm', mount: 'G', formatId: 'gfx' },
-  { id: 'om-1', name: 'OM System OM-1', maker: 'OM System', mount: 'MFT', formatId: 'mft' },
-];
+// Camera bodies live in cameras.seed.ts (a comprehensive mirrorless dataset);
+// re-exported here so existing imports keep working.
+export { CAMERAS } from './cameras.seed';
 
 // Curated Fujifilm GF (medium format) lenses — LensDB has no G mount, so GFX
 // bodies would otherwise show nothing.
