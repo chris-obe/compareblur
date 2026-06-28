@@ -28,7 +28,9 @@ export interface CatalogLens {
   coversFormatIds: string[];
   af: boolean;
   thirdParty: boolean;
-  price?: { min: number; max: number; currency: 'USD' };
+  // reserved for the future "cheapest / AF lens to get this look" feature:
+  // usd = current street price, msrpUsd = new/launch price (lower/upper bounds).
+  price?: { usd?: number; msrpUsd?: number };
 }
 
 export function cameraFormat(cam: Camera): Format {
@@ -36,11 +38,11 @@ export function cameraFormat(cam: Camera): Format {
 }
 
 // Lenses available for a body: right mount AND its image circle covers the
-// body's sensor format.
+// body's sensor format. Sorted by maker then focal for a sane dropdown.
 export function lensesForCamera(cam: Camera, lenses: CatalogLens[]): CatalogLens[] {
-  return lenses.filter(
-    (l) => l.mounts.includes(cam.mount) && l.coversFormatIds.includes(cam.formatId),
-  );
+  return lenses
+    .filter((l) => l.mounts.includes(cam.mount) && l.coversFormatIds.includes(cam.formatId))
+    .sort((a, b) => a.maker.localeCompare(b.maker) || a.focalMin - b.focalMin);
 }
 
 // A sensible default focal for a lens (primes: the focal; zooms: the wide end).

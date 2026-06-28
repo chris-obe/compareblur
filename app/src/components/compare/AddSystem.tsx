@@ -5,6 +5,7 @@ import { CAMERAS, LENSES } from '../../data/gear.seed';
 import { cameraFormat, defaultFocal, lensesForCamera, type CatalogLens } from '../../lib/gear';
 import { useKit } from '../../store/KitProvider';
 import { useCompare, nextSystemId, type CompareSystem } from '../../store/CompareProvider';
+import { NumberField } from '../ui/NumberField';
 
 type Mode = 'camera' | 'kit' | 'manual';
 
@@ -118,7 +119,7 @@ function CameraMode({ onAdd }: { onAdd: (s: CompareSystem) => void }) {
           <select className={fieldCls} value={lensId} onChange={(e) => setLensId(e.target.value)}>
             {available.map((l) => (
               <option key={l.id} value={l.id}>
-                {l.name}
+                {l.maker} {l.name}
                 {l.thirdParty ? ' ·3rd' : ''}
                 {!l.af ? ' ·MF' : ''}
               </option>
@@ -205,11 +206,11 @@ function ManualMode({ onAdd }: { onAdd: (s: CompareSystem) => void }) {
         </label>
         <label className="flex flex-col gap-1">
           <span className="label">Focal mm</span>
-          <input type="number" min={1} className={fieldCls} value={focal} onChange={(e) => setFocal(Math.max(1, +e.target.value || 0))} />
+          <NumberField value={focal} onCommit={setFocal} min={1} className={fieldCls} />
         </label>
         <label className="flex flex-col gap-1">
           <span className="label">ƒ/</span>
-          <input type="number" step={0.1} min={0.7} className={fieldCls} value={aperture} onChange={(e) => setAperture(Math.max(0.7, +e.target.value || 0))} />
+          <NumberField value={aperture} onCommit={setAperture} min={0.7} step={0.1} className={fieldCls} />
         </label>
       </div>
       <AddButton onClick={submit} />
@@ -238,30 +239,24 @@ function FocalAperture({
         <span className="label">
           Focal {isZoom ? `(${lens.focalMin}–${lens.focalMax}mm)` : 'mm'}
         </span>
-        <input
-          type="number"
-          className={fieldCls}
+        <NumberField
           value={focal}
+          onCommit={setFocal}
           min={lens.focalMin}
           max={lens.focalMax}
           disabled={!isZoom}
-          onChange={(e) =>
-            setFocal(Math.min(lens.focalMax, Math.max(lens.focalMin, +e.target.value || lens.focalMin)))
-          }
+          className={fieldCls}
         />
       </label>
       <label className="flex flex-col gap-1">
         <span className="label">Aperture (ƒ/{lens.apMax}–{lens.apMin})</span>
-        <input
-          type="number"
-          step={0.1}
-          className={fieldCls}
+        <NumberField
           value={aperture}
+          onCommit={setAperture}
           min={lens.apMax}
           max={lens.apMin}
-          onChange={(e) =>
-            setAperture(Math.min(lens.apMin, Math.max(lens.apMax, +e.target.value || lens.apMax)))
-          }
+          step={0.1}
+          className={fieldCls}
         />
       </label>
     </div>

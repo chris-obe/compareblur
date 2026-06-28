@@ -1,3 +1,5 @@
+import { NumberField } from '../ui/NumberField';
+
 interface Props {
   width: number;
   onChange: (w: number) => void;
@@ -35,12 +37,12 @@ export function SubjectControl({ width, onChange }: Props) {
           isPreset ? 'border-line' : 'border-fg',
         ].join(' ')}
       >
-        <input
-          type="number"
-          step={0.1}
-          min={0.1}
+        <NumberField
           value={width}
-          onChange={(e) => onChange(Math.max(0.1, +e.target.value || 0.1))}
+          onCommit={onChange}
+          min={0.1}
+          step={0.1}
+          aria-label="Subject width in metres"
           className="w-14 bg-transparent text-right outline-none tabular-nums"
         />
         <span className="text-muted">m wide</span>

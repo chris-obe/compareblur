@@ -3,6 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "cd app && npm ci && npm run build"
+    "setup": "cd app && bun install",
+    "dev": "cd app && bun run dev",
+    "build": "cd app && npm ci && npm run build",
+    "preview": "cd app && bun run preview"
   }
 }

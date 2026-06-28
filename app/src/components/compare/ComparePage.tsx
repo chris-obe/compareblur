@@ -4,6 +4,10 @@ import { useCompare, systemLabel } from '../../store/CompareProvider';
 import { BlurChart, DashSwatch } from './BlurChart';
 import { SubjectControl } from './SubjectControl';
 import { AddSystem } from './AddSystem';
+import { NumberField } from '../ui/NumberField';
+
+const slotField =
+  'w-16 border border-line bg-transparent px-1.5 py-1 text-xs outline-none focus:border-line-strong';
 
 export function ComparePage() {
   const { systems, remove, update, clear } = useCompare();
@@ -40,23 +44,21 @@ export function ComparePage() {
               </div>
               <label className="flex flex-col gap-0.5">
                 <span className="label">Focal</span>
-                <input
-                  type="number"
-                  min={1}
+                <NumberField
                   value={Math.round(s.focal)}
-                  onChange={(e) => update(s.id, { focal: Math.max(1, +e.target.value || 0) })}
-                  className="w-16 border border-line bg-transparent px-1.5 py-1 text-xs outline-none focus:border-line-strong"
+                  onCommit={(n) => update(s.id, { focal: n })}
+                  min={1}
+                  className={slotField}
                 />
               </label>
               <label className="flex flex-col gap-0.5">
                 <span className="label">ƒ/</span>
-                <input
-                  type="number"
-                  step={0.1}
-                  min={0.7}
+                <NumberField
                   value={s.aperture}
-                  onChange={(e) => update(s.id, { aperture: Math.max(0.7, +e.target.value || 0) })}
-                  className="w-16 border border-line bg-transparent px-1.5 py-1 text-xs outline-none focus:border-line-strong"
+                  onCommit={(n) => update(s.id, { aperture: n })}
+                  min={0.7}
+                  step={0.1}
+                  className={slotField}
                 />
               </label>
               <button

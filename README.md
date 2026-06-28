@@ -31,11 +31,21 @@ Key exports (`engine/index.js`): `matchSystem`, `blurFraction`, `blurCurve`,
 
 ## Running the app
 
+From the repository root (recommended with [Bun](https://bun.sh)):
+
+```bash
+bun run setup    # install app dependencies
+bun run dev      # http://localhost:5173 (or $CONDUCTOR_PORT in Conductor)
+bun run build    # type-check + production bundle (npm ci for Cloudflare Pages)
+```
+
+Or from `app/` directly:
+
 ```bash
 cd app
-npm install
-npm run dev      # http://localhost:5173
-npm run build    # type-check + production bundle
+bun install
+bun run dev      # http://localhost:5173
+bun run build    # type-check + production bundle
 ```
 
 The app imports the engine from the sibling `engine/` directory via a Vite alias
@@ -64,3 +74,7 @@ The root `package.json` also supports Pages projects currently configured with
 
 Original concept and calculator by [maakbaas](https://github.com/maakbaas/how-much-blur);
 online version hosted by Gijs de Koning.
+
+Lens catalog data from [LensDB](https://github.com/Luminoid/lens-db) (lens.luminoid.dev),
+used under CC BY-NC-SA 4.0 — this project is non-commercial and shares the derived dataset
+under the same license. See `app/src/data/LENSDB.md`.

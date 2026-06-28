@@ -127,7 +127,7 @@ export function Lightbox({ list, index, onIndex, onClose, getAnchorRect }: Props
           <div
             ref={frameRef}
             style={{ transformOrigin: 'top left' }}
-            className="pointer-events-auto relative mx-auto h-full w-full max-w-[1100px] border border-line-strong bg-surface"
+            className="pointer-events-auto relative mx-auto h-full w-full max-w-[1100px] overflow-hidden border border-line-strong bg-surface"
           >
             <AnimatePresence custom={dir} initial={false}>
               <motion.img
