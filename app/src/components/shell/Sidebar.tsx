@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { Images, GitCompare, Aperture, Lightbulb } from 'lucide-react';
+import { Images, GitCompare, Aperture, Lightbulb, Shield } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 interface NavItem {
@@ -14,6 +14,7 @@ const NAV: NavItem[] = [
   { to: '/compare', label: 'Compare', icon: GitCompare },
   { to: '/kit', label: 'My Kit', icon: Aperture },
   { to: '/suggestions', label: 'Suggestions', icon: Lightbulb },
+  { to: '/admin', label: 'Admin', icon: Shield },
 ];
 
 export function Sidebar() {

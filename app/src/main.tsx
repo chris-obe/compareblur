@@ -6,6 +6,7 @@ import { AppAuthProvider } from './auth/AuthProvider';
 import { ThemeProvider } from './store/ThemeProvider';
 import { KitProvider } from './store/KitProvider';
 import { CompareProvider } from './store/CompareProvider';
+import { CatalogProvider } from './store/CatalogProvider';
 import './index.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
@@ -13,11 +14,13 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     <BrowserRouter>
       <AppAuthProvider>
         <ThemeProvider>
-          <KitProvider>
-            <CompareProvider>
-              <App />
-            </CompareProvider>
-          </KitProvider>
+          <CatalogProvider>
+            <KitProvider>
+              <CompareProvider>
+                <App />
+              </CompareProvider>
+            </KitProvider>
+          </CatalogProvider>
         </ThemeProvider>
       </AppAuthProvider>
     </BrowserRouter>

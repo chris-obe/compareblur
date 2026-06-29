@@ -5,6 +5,7 @@ import { Compare } from './pages/Compare';
 import { MyKit } from './pages/MyKit';
 import { Suggestions } from './pages/Suggestions';
 import { Stub } from './pages/Stub';
+import { Admin } from './pages/Admin';
 
 export default function App() {
   return (
@@ -46,6 +47,14 @@ export default function App() {
         element={
           <AppShell title="Settings">
             <Stub name="Settings" />
+          </AppShell>
+        }
+      />
+      <Route
+        path="/admin"
+        element={
+          <AppShell title="Admin">
+            <Admin />
           </AppShell>
         }
       />
