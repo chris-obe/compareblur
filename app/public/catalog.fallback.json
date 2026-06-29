@@ -1,17 +1,17 @@
 {
-  "generatedAt": "2026-06-28T23:43:43.096Z",
+  "generatedAt": "2026-06-29T00:56:55.663Z",
   "sources": [
     {
       "id": "camera-database",
       "url": "https://raw.githubusercontent.com/leavestylecode/CameraDatabase/main/data/camera_data.json",
-      "fetchedAt": "2026-06-28T23:43:43.014Z",
+      "fetchedAt": "2026-06-29T00:56:55.625Z",
       "sha256": "fc4dc948644ad9b24f4f20ed49a84aaecabf8be50a28148db4e9f80fe26b815d",
       "license": "MIT"
     },
     {
       "id": "lens-db",
       "url": "https://raw.githubusercontent.com/Luminoid/lens-db/main/data/lenses.json",
-      "fetchedAt": "2026-06-28T23:43:42.975Z",
+      "fetchedAt": "2026-06-29T00:56:55.603Z",
       "sha256": "1e8fdd48494d62f9ab3f2a9f6a59ee2dcd24e893105a1a2c85140d3fb7909db2",
       "license": "CC BY-NC-SA 4.0"
     },
