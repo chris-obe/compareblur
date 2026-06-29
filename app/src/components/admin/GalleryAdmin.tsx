@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Check, ImagePlus, RotateCcw, Send, Trash2, Upload, X } from 'lucide-react';
+import { Check, ImagePlus, Pencil, RotateCcw, Save, Send, Trash2, Upload, X } from 'lucide-react';
 import { Button } from '../ui/Button';
 import {
   deleteAdminGalleryPhoto,
@@ -33,6 +33,7 @@ interface UploadFields {
   aperture: string;
   tags: string;
   status: GalleryStatus;
+  notes: string;
 }
 
 const STATUS_ORDER: GalleryStatus[] = ['pending', 'approved', 'draft', 'rejected'];
@@ -48,6 +49,7 @@ const INITIAL_FIELDS: UploadFields = {
   aperture: '1.8',
   tags: '',
   status: 'approved',
+  notes: '',
 };
 
 export function GalleryAdmin({ accessToken, photos, loading, loaded, error, onReload, onError }: Props) {
@@ -61,6 +63,7 @@ export function GalleryAdmin({ accessToken, photos, loading, loaded, error, onRe
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [suggestion, setSuggestion] = useState<GalleryMetadataSuggestion | null>(null);
   const [fields, setFields] = useState<UploadFields>(INITIAL_FIELDS);
+  const [editing, setEditing] = useState<{ id: string; fields: UploadFields } | null>(null);
 
   useEffect(() => {
     return () => {
@@ -112,6 +115,7 @@ export function GalleryAdmin({ accessToken, photos, loading, loaded, error, onRe
         aperture: String(Math.round(next.aperture * 10) / 10),
         tags: suggestedTags(next).join(', '),
         status: 'approved',
+        notes: '',
       });
     } catch (err) {
       onError(err instanceof Error ? err.message : 'Could not read image metadata');
@@ -136,6 +140,43 @@ export function GalleryAdmin({ accessToken, photos, loading, loaded, error, onRe
       await onReload();
     } catch (err) {
       onError(err instanceof Error ? err.message : 'Gallery update failed');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const beginEdit = (photo: AdminGalleryPhoto) => {
+    setEditing({ id: photo.id, fields: fieldsFromPhoto(photo) });
+  };
+
+  const setEditField = (name: keyof UploadFields, value: string) => {
+    setEditing((current) => current ? { ...current, fields: { ...current.fields, [name]: value } } : current);
+  };
+
+  const saveEdit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!editing) return;
+
+    setBusyId(editing.id);
+    try {
+      await updateAdminGalleryPhoto(editing.id, {
+        title: editing.fields.title,
+        author: editing.fields.author,
+        status: editing.fields.status,
+        formatId: editing.fields.formatId,
+        camera: editing.fields.camera,
+        cameraCatalogId: editing.fields.cameraCatalogId,
+        lens: editing.fields.lens,
+        lensCatalogId: editing.fields.lensCatalogId,
+        focal: numberOrFallback(editing.fields.focal, 50),
+        aperture: numberOrFallback(editing.fields.aperture, 1.8),
+        tags: normalizeTagList(editing.fields.tags),
+        notes: editing.fields.notes,
+      }, accessToken);
+      setEditing(null);
+      await onReload();
+    } catch (err) {
+      onError(err instanceof Error ? err.message : 'Gallery edit failed');
     } finally {
       setBusyId(null);
     }
@@ -271,6 +312,46 @@ export function GalleryAdmin({ accessToken, photos, loading, loaded, error, onRe
         </div>
       </form>
 
+      {editing && (
+        <form onSubmit={saveEdit} className="border border-line bg-faint p-3">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="label mb-1">Edit gallery record</div>
+              <div className="text-sm font-bold tracking-tight">{editing.fields.title || editing.id}</div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="solid" disabled={busyId === editing.id || !editing.fields.title}>
+                <Save size={14} strokeWidth={1.5} />
+                Save record
+              </Button>
+              <Button type="button" onClick={() => setEditing(null)} disabled={busyId === editing.id}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+          <div className="grid gap-3 lg:grid-cols-6">
+            <Field className="lg:col-span-2" label="Title" value={editing.fields.title} onChange={(value) => setEditField('title', value)} required />
+            <Field className="lg:col-span-2" label="Author" value={editing.fields.author} onChange={(value) => setEditField('author', value)} />
+            <SelectField
+              className="lg:col-span-2"
+              label="Status"
+              value={editing.fields.status}
+              onChange={(value) => setEditField('status', value)}
+              options={STATUS_ORDER}
+            />
+            <Field className="lg:col-span-2" label="Camera" value={editing.fields.camera} onChange={(value) => setEditField('camera', value)} />
+            <Field className="lg:col-span-2" label="Camera catalog ID" value={editing.fields.cameraCatalogId} onChange={(value) => setEditField('cameraCatalogId', value)} />
+            <Field className="lg:col-span-2" label="Lens" value={editing.fields.lens} onChange={(value) => setEditField('lens', value)} />
+            <Field className="lg:col-span-2" label="Lens catalog ID" value={editing.fields.lensCatalogId} onChange={(value) => setEditField('lensCatalogId', value)} />
+            <Field className="lg:col-span-1" label="Format" value={editing.fields.formatId} onChange={(value) => setEditField('formatId', value)} />
+            <Field className="lg:col-span-1" label="Focal" value={editing.fields.focal} onChange={(value) => setEditField('focal', value)} />
+            <Field className="lg:col-span-1" label="Aperture" value={editing.fields.aperture} onChange={(value) => setEditField('aperture', value)} />
+            <Field className="lg:col-span-3" label="Tags" value={editing.fields.tags} onChange={(value) => setEditField('tags', value)} />
+            <Field className="lg:col-span-6" label="Notes" value={editing.fields.notes} onChange={(value) => setEditField('notes', value)} />
+          </div>
+        </form>
+      )}
+
       <div className="overflow-x-auto border border-line">
         <table className="w-full min-w-[58rem] border-collapse text-left text-xs">
           <thead className="bg-faint text-muted">
@@ -316,6 +397,10 @@ export function GalleryAdmin({ accessToken, photos, loading, loaded, error, onRe
                         Approve
                       </Button>
                     )}
+                    <Button disabled={busyId === photo.id} onClick={() => beginEdit(photo)}>
+                      <Pencil size={13} strokeWidth={1.5} />
+                      Edit
+                    </Button>
                     <Button disabled={busyId === photo.id} onClick={() => updateStatus(photo, 'rejected')}>
                       <X size={13} strokeWidth={1.5} />
                       Reject
@@ -379,6 +464,35 @@ function suggestedTags(suggestion: GalleryMetadataSuggestion): string[] {
   if (suggestion.cameraConfidence !== 'none') tags.add('catalog');
   if (suggestion.source.exif.guessedFormat) tags.add('check format');
   return [...tags];
+}
+
+function fieldsFromPhoto(photo: AdminGalleryPhoto): UploadFields {
+  return {
+    title: photo.title,
+    author: photo.author ?? '',
+    camera: photo.camera,
+    cameraCatalogId: photo.cameraCatalogId ?? '',
+    lens: photo.lens,
+    lensCatalogId: photo.lensCatalogId ?? '',
+    formatId: photo.formatId,
+    focal: String(photo.focal),
+    aperture: String(photo.aperture),
+    tags: photo.tags.join(', '),
+    status: photo.status,
+    notes: photo.notes ?? '',
+  };
+}
+
+function normalizeTagList(value: string): string[] {
+  return value
+    .split(',')
+    .map((tag) => tag.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function numberOrFallback(value: string, fallback: number): number {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
 }
 
 function uploadHint(suggestion: GalleryMetadataSuggestion | null): string {

@@ -21,7 +21,7 @@ export function Sidebar() {
   return (
     <aside className="flex h-full w-52 shrink-0 flex-col border-r border-line">
       <div className="flex h-14 items-center border-b border-line px-4">
-        <span className="text-sm font-bold tracking-tight">howmuchblur</span>
+        <span className="text-lg font-bold tracking-tight">blur</span>
       </div>
       <nav className="flex flex-col py-2">
         {NAV.map(({ to, label, icon: Icon, end }) => (

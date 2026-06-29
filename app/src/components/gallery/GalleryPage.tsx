@@ -3,8 +3,9 @@ import { getFormat } from '../../lib/engine';
 import { categoryForFormat, type CategoryId } from '../../lib/categories';
 import { GALLERY_SEED } from '../../data/gallery.seed';
 import type { GalleryItem, ViewEntry } from '../../lib/types';
-import { extractExif } from '../../lib/exif';
 import { listGalleryPhotos } from '../../lib/galleryApi';
+import { suggestGalleryMetadata } from '../../lib/galleryMetadata';
+import { useCatalog } from '../../store/CatalogProvider';
 import { FilterBar } from './FilterBar';
 import { UploadBox } from './UploadBox';
 import { GalleryGrid } from './GalleryGrid';
@@ -30,6 +31,7 @@ interface View {
 }
 
 export function GalleryPage() {
+  const { cameras, lenses } = useCatalog();
   const [formats, setFormats] = useState<Set<CategoryId>>(new Set());
   const [tags, setTags] = useState<string[]>([]);
   const [view, setView] = useState<View | null>(null);
@@ -114,21 +116,19 @@ export function GalleryPage() {
   const onFile = async (file: File) => {
     setBusy(true);
     try {
-      const exif = await extractExif(file);
+      const metadata = await suggestGalleryMetadata(file, cameras, lenses);
       revoke();
       const preview = URL.createObjectURL(file);
       objectUrl.current = preview;
-      const camera = [exif.make, exif.model].filter(Boolean).join(' ') || 'Unknown camera';
-      const lens = exif.lensModel ?? (exif.focal ? `${exif.focal}mm` : 'unknown lens');
       const entry: ViewEntry = {
         id: 'upload',
         title: file.name,
-        metaLine: `${camera} · ${lens}${exif.aperture ? ` · ƒ/${exif.aperture}` : ''}`,
+        metaLine: `${metadata.camera} · ${metadata.lens} · shot ƒ/${metadata.aperture}`,
         src: preview,
-        format: exif.format,
-        focal: exif.focal ?? exif.focal35 ?? 50,
-        aperture: exif.aperture ?? 1.8,
-        guessed: exif.guessedFormat,
+        format: metadata.format,
+        focal: metadata.focal,
+        aperture: metadata.aperture,
+        guessed: metadata.source.exif.guessedFormat && metadata.cameraConfidence === 'none',
         morph: false,
       };
       setView({ list: [entry], index: 0 });

@@ -27,6 +27,12 @@ function shortName(name: string): string {
   return name.replace(/\s*\(.*?\)\s*/g, '').trim() || name;
 }
 
+function equivalentLabel(fmt: Format): string {
+  const name = shortName(fmt.name);
+  if (fmt.id === 'ff') return 'Full-frame Equivalent';
+  return `${name} Equivalent`;
+}
+
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div className="border border-line px-3 py-2">
@@ -68,11 +74,13 @@ export function LightboxInfo({ entry }: { entry: ViewEntry }) {
   const { add: addToCompare } = useCompare();
   const navigate = useNavigate();
   const [format, setFormat] = useState<Format>(entry.format);
+  const [targetFormat, setTargetFormat] = useState<Format>(FORMATS.find((f) => f.id === 'ff') ?? FORMATS[0]);
   const [focal, setFocal] = useState(entry.focal);
   const [aperture, setAperture] = useState(entry.aperture);
 
   useEffect(() => {
     setFormat(entry.format);
+    setTargetFormat(FORMATS.find((f) => f.id === 'ff') ?? FORMATS[0]);
     setFocal(entry.focal);
     setAperture(entry.aperture);
   }, [entry]);
@@ -84,7 +92,7 @@ export function LightboxInfo({ entry }: { entry: ViewEntry }) {
     return known ? FORMATS : [entry.format, ...FORMATS];
   }, [entry.format]);
 
-  const m = computeMatch(format, focal, aperture, { cameras, lenses });
+  const m = computeMatch(format, focal, aperture, { cameras, lenses }, targetFormat);
   const verdict = m.kitEval.verdict;
   const vmap = {
     covered: { Icon: Check, label: 'In your kit' },
@@ -123,16 +131,34 @@ export function LightboxInfo({ entry }: { entry: ViewEntry }) {
         )}
         <div className="grid grid-cols-3 gap-2">
           <Stat label="Focal length" value={`${Math.round(focal)} mm`} />
-          <Stat label="Aperture" value={`ƒ/${aperture.toFixed(1)}`} />
+          <Stat label="Shot aperture" value={`ƒ/${aperture.toFixed(1)}`} />
           <Stat label="Field of view" value={`${Math.round(m.fov.h)}°`} />
           <SensorCell fmt={format} />
         </div>
       </div>
 
+      <label className="block border border-line px-3 py-2">
+        <span className="label mb-2 block">Equivalent format</span>
+        <select
+          value={targetFormat.id}
+          onChange={(e) => {
+            const next = FORMATS.find((f) => f.id === e.target.value);
+            if (next) setTargetFormat(next);
+          }}
+          className="w-full bg-transparent text-sm font-bold outline-none"
+        >
+          {FORMATS.map((f) => (
+            <option key={f.id} value={f.id}>
+              {shortName(f.name)}
+            </option>
+          ))}
+        </select>
+      </label>
+
       <div className="border border-line-strong p-4">
-        <div className="label mb-2">Full-frame equivalent</div>
+        <div className="label mb-2">{equivalentLabel(targetFormat)}</div>
         <div className="text-2xl font-bold tracking-tight tabular-nums">
-          {r1(m.ff.fullFrameEquivalent.focal)}mm · ƒ/{r1(m.ff.fullFrameEquivalent.aperture)}
+          {r1(m.equivalent.target.focal)}mm · ƒ/{r1(m.equivalent.target.aperture)}
         </div>
       </div>
 

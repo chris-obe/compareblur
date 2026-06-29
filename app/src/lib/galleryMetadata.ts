@@ -1,16 +1,19 @@
 import { extractExif } from './exif';
 import {
+  cameraFormat,
   lensesForCamera,
   maxApertureAtFocal,
   type Camera,
   type CatalogLens,
 } from './gear';
+import type { Format } from './engine';
 
-export type MetadataConfidence = 'exact' | 'likely' | 'fallback' | 'none';
+export type MetadataConfidence = 'exact' | 'compatible' | 'none';
 
 export interface GalleryMetadataSuggestion {
   title: string;
   formatId: string;
+  format: Format;
   camera: string;
   cameraCatalogId?: string;
   cameraConfidence: MetadataConfidence;
@@ -44,11 +47,6 @@ export interface GalleryMetadataSuggestion {
   };
 }
 
-interface Scored<T> {
-  item: T;
-  score: number;
-}
-
 export async function suggestGalleryMetadata(
   file: File,
   cameras: Camera[],
@@ -65,11 +63,13 @@ export async function suggestGalleryMetadata(
 
   const camera = cameraMatch.item;
   const lens = lensMatch.item;
-  const formatId = camera?.formatId ?? exif.format.id;
+  const format = camera ? cameraFormat(camera) : exif.format;
+  const formatId = format.id;
 
   return {
     title,
     formatId,
+    format,
     camera: camera?.name ?? (cameraInput || 'Unknown camera'),
     cameraCatalogId: camera?.id,
     cameraConfidence: cameraMatch.confidence,
@@ -119,12 +119,7 @@ function matchCamera(input: string, cameras: Camera[]): {
   const exact = cameras.find((camera) => cameraKeys(camera).some((key) => key === normalized));
   if (exact) return { item: exact, confidence: 'exact', reason: 'EXIF make/model matched catalog camera' };
 
-  const scored = bestScore(cameras, (camera) => Math.max(...cameraKeys(camera).map((key) => tokenScore(normalized, key))));
-  if (scored && scored.score >= 0.62) {
-    return { item: scored.item, confidence: 'likely', reason: 'EXIF make/model was close to catalog camera' };
-  }
-
-  return { confidence: 'none', reason: 'No catalog camera match' };
+  return { confidence: 'none', reason: 'No exact catalog camera match' };
 }
 
 function matchLens(
@@ -138,22 +133,25 @@ function matchLens(
   reason: string;
 } {
   const normalized = normalize(lensModel ?? '');
+  const targetAperture = apertureFromLensModel(lensModel) ?? aperture;
   if (normalized) {
     const exact = lenses.find((lens) => lensKeys(lens).some((key) => key === normalized));
     if (exact) return { item: exact, confidence: 'exact', reason: 'EXIF lens model matched catalog lens' };
-
-    const scored = bestScore(lenses, (lens) => Math.max(...lensKeys(lens).map((key) => tokenScore(normalized, key))));
-    if (scored && scored.score >= 0.58) {
-      return { item: scored.item, confidence: 'likely', reason: 'EXIF lens model was close to catalog lens' };
-    }
   }
 
-  const compatible = lenses.filter((lens) => focal >= lens.focalMin && focal <= lens.focalMax);
-  const apertureCompatible = compatible.filter((lens) => maxApertureAtFocal(lens, focal) <= aperture + 0.2);
-  const fallback = apertureCompatible[0] ?? compatible[0];
-  if (fallback) return { item: fallback, confidence: 'fallback', reason: 'Matched by focal length and aperture' };
+  const compatible = lenses.filter((lens) => {
+    if (focal < lens.focalMin || focal > lens.focalMax) return false;
+    return Math.abs(maxApertureAtFocal(lens, focal) - targetAperture) <= 0.1;
+  });
+  const fallback = compatible[0];
+  if (fallback) return { item: fallback, confidence: 'compatible', reason: 'Matched by exact focal length and maximum aperture' };
 
-  return { confidence: 'none', reason: lensModel ? 'No catalog lens match' : 'No EXIF lens model' };
+  return {
+    confidence: 'none',
+    reason: lensModel
+      ? 'No exact catalog lens match'
+      : 'No catalog lens with matching focal length and aperture',
+  };
 }
 
 function cameraKeys(camera: Camera): string[] {
@@ -174,25 +172,12 @@ function normalize(value: string): string {
     .trim();
 }
 
-function tokenScore(a: string, b: string): number {
-  if (!a || !b) return 0;
-  if (a === b) return 1;
-  if (a.includes(b) || b.includes(a)) return 0.86;
-
-  const aTokens = new Set(a.split(' '));
-  const bTokens = new Set(b.split(' '));
-  const overlap = [...aTokens].filter((token) => bTokens.has(token)).length;
-  const total = new Set([...aTokens, ...bTokens]).size;
-  return total === 0 ? 0 : overlap / total;
-}
-
-function bestScore<T>(items: T[], score: (item: T) => number): Scored<T> | null {
-  let best: Scored<T> | null = null;
-  for (const item of items) {
-    const next = score(item);
-    if (!best || next > best.score) best = { item, score: next };
-  }
-  return best;
+function apertureFromLensModel(value: string | undefined): number | null {
+  if (!value) return null;
+  const match = value.match(/(?:f|ƒ)\s*\/?\s*(\d+(?:\.\d+)?)/i);
+  if (!match) return null;
+  const aperture = Number(match[1]);
+  return Number.isFinite(aperture) ? aperture : null;
 }
 
 function unique(values: string[]): string[] {
