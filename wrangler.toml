@@ -2,9 +2,6 @@ name = "compareblur"
 pages_build_output_dir = "app/dist"
 compatibility_date = "2026-06-27"
 
-[vars]
-ADMIN_API_TOKEN_SHA256 = "__REMOVED_ADMIN_API_TOKEN_SHA256__"
-
 [[d1_databases]]
 binding = "GALLERY_DB"
 database_name = "compareblur-gallery"
