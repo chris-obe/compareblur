@@ -7,6 +7,7 @@ import {
   type GalleryRow,
 } from '../../../_lib/gallery';
 import { adminAuthError, requireAdmin } from '../../../_lib/admin';
+import { galleryFormatIdOrDefault } from '../../../_lib/formats';
 
 type Env = GalleryEnv & {
   AUTH0_AUDIENCE?: string;
@@ -61,6 +62,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ env, request }) => {
     return json({ error: 'invalid status' }, { status: 400 });
   }
 
+  const formatId = galleryFormatIdOrDefault(form.get('formatId'));
+  if (!formatId) return json({ error: 'invalid formatId' }, { status: 400 });
+
   await env.GALLERY_BUCKET.put(objectKey, file.stream(), {
     httpMetadata: { contentType: file.type || 'application/octet-stream' },
     customMetadata: { title, uploadedAt: now },
@@ -84,7 +88,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ env, request }) => {
       file.type || 'application/octet-stream',
       numberOrNull(form.get('width')),
       numberOrNull(form.get('height')),
-      String(form.get('formatId') ?? 'ff'),
+      formatId,
       String(form.get('camera') ?? 'Unknown camera'),
       stringOrNull(form.get('cameraCatalogId')),
       String(form.get('lens') ?? 'Unknown lens'),

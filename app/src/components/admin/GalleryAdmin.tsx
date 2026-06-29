@@ -16,6 +16,7 @@ import {
   type ProcessedImage,
 } from '../../lib/imageProcessing';
 import { suggestGalleryMetadata, type GalleryMetadataSuggestion } from '../../lib/galleryMetadata';
+import { FORMATS } from '../../lib/engine';
 import { useCatalog } from '../../store/CatalogProvider';
 
 interface Props {
@@ -176,7 +177,7 @@ export function GalleryAdmin({ accessToken, photos, loading, loaded, error, onRe
         title: editing.fields.title,
         author: editing.fields.author,
         status: editing.fields.status,
-        formatId: editing.fields.formatId,
+        formatId: normalizedFormatId(editing.fields.formatId),
         camera: editing.fields.camera,
         cameraCatalogId: editing.fields.cameraCatalogId,
         lens: editing.fields.lens,
@@ -232,7 +233,7 @@ export function GalleryAdmin({ accessToken, photos, loading, loaded, error, onRe
     form.set('cameraCatalogId', fields.cameraCatalogId);
     form.set('lens', fields.lens);
     form.set('lensCatalogId', fields.lensCatalogId);
-    form.set('formatId', fields.formatId);
+    form.set('formatId', normalizedFormatId(fields.formatId));
     form.set('focal', fields.focal);
     form.set('aperture', fields.aperture);
     form.set('tags', fields.tags);
@@ -349,7 +350,7 @@ export function GalleryAdmin({ accessToken, photos, loading, loaded, error, onRe
             />
             <Field className="lg:col-span-2" label="Camera" value={fields.camera} onChange={(value) => setField('camera', value)} />
             <Field className="lg:col-span-2" label="Lens" value={fields.lens} onChange={(value) => setField('lens', value)} />
-            <Field className="lg:col-span-1" label="Format" value={fields.formatId} onChange={(value) => setField('formatId', value)} />
+            <FormatField className="lg:col-span-1" value={fields.formatId} onChange={(value) => setField('formatId', value)} />
             <Field className="lg:col-span-1" label="Focal" value={fields.focal} onChange={(value) => setField('focal', value)} />
             <Field className="lg:col-span-1" label="Aperture" value={fields.aperture} onChange={(value) => setField('aperture', value)} />
             <Field className="lg:col-span-3" label="Tags" value={fields.tags} onChange={(value) => setField('tags', value)} placeholder="portrait, bokeh" />
@@ -398,7 +399,7 @@ export function GalleryAdmin({ accessToken, photos, loading, loaded, error, onRe
             <Field className="lg:col-span-2" label="Camera catalog ID" value={editing.fields.cameraCatalogId} onChange={(value) => setEditField('cameraCatalogId', value)} />
             <Field className="lg:col-span-2" label="Lens" value={editing.fields.lens} onChange={(value) => setEditField('lens', value)} />
             <Field className="lg:col-span-2" label="Lens catalog ID" value={editing.fields.lensCatalogId} onChange={(value) => setEditField('lensCatalogId', value)} />
-            <Field className="lg:col-span-1" label="Format" value={editing.fields.formatId} onChange={(value) => setEditField('formatId', value)} />
+            <FormatField className="lg:col-span-1" value={editing.fields.formatId} onChange={(value) => setEditField('formatId', value)} />
             <Field className="lg:col-span-1" label="Focal" value={editing.fields.focal} onChange={(value) => setEditField('focal', value)} />
             <Field className="lg:col-span-1" label="Aperture" value={editing.fields.aperture} onChange={(value) => setEditField('aperture', value)} />
             <Field className="lg:col-span-3" label="Tags" value={editing.fields.tags} onChange={(value) => setEditField('tags', value)} />
@@ -529,7 +530,7 @@ function fieldsFromPhoto(photo: AdminGalleryPhoto): UploadFields {
     cameraCatalogId: photo.cameraCatalogId ?? '',
     lens: photo.lens,
     lensCatalogId: photo.lensCatalogId ?? '',
-    formatId: photo.formatId,
+    formatId: normalizedFormatId(photo.formatId),
     focal: String(photo.focal),
     aperture: String(photo.aperture),
     tags: photo.tags.join(', '),
@@ -548,6 +549,10 @@ function normalizeTagList(value: string): string[] {
 function numberOrFallback(value: string, fallback: number): number {
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
+}
+
+function normalizedFormatId(value: string): string {
+  return FORMATS.some((format) => format.id === value) ? value : 'ff';
 }
 
 function formatBytes(value: number): string {
@@ -614,6 +619,35 @@ function SelectField({
         {options.map((option) => (
           <option key={option} value={option}>
             {option}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function FormatField({
+  value,
+  onChange,
+  className = '',
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  className?: string;
+}) {
+  const normalized = FORMATS.some((format) => format.id === value) ? value : 'ff';
+
+  return (
+    <label className={`block ${className}`}>
+      <span className="label mb-1 block">Format</span>
+      <select
+        value={normalized}
+        onChange={(event) => onChange(event.target.value)}
+        className="w-full border border-line bg-transparent px-2 py-1.5 text-xs outline-none focus:border-line-strong"
+      >
+        {FORMATS.map((format) => (
+          <option key={format.id} value={format.id}>
+            {format.name}
           </option>
         ))}
       </select>

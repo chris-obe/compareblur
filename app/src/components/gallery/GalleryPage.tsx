@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { getFormat } from '../../lib/engine';
 import { categoryForFormat, type CategoryId } from '../../lib/categories';
 import { GALLERY_SEED } from '../../data/gallery.seed';
 import type { GalleryItem, ViewEntry } from '../../lib/types';
 import { listGalleryPhotos } from '../../lib/galleryApi';
+import { resolveGalleryFormat } from '../../lib/galleryFormat';
 import { suggestGalleryMetadata } from '../../lib/galleryMetadata';
 import { useCatalog } from '../../store/CatalogProvider';
 import { FilterBar } from './FilterBar';
@@ -12,15 +12,17 @@ import { GalleryGrid } from './GalleryGrid';
 import { Lightbox } from './Lightbox';
 
 function toEntry(item: GalleryItem): ViewEntry {
+  const { format, fallbackUsed } = resolveGalleryFormat(item.formatId);
+
   return {
     id: item.id,
     title: item.title,
     metaLine: `${item.camera} · ${item.lens}`,
     src: item.src,
-    format: getFormat(item.formatId),
+    format,
     focal: item.focal,
     aperture: item.aperture,
-    guessed: false,
+    guessed: fallbackUsed,
     morph: true,
   };
 }
