@@ -1,3 +1,18 @@
 name = "compareblur"
 pages_build_output_dir = "app/dist"
 compatibility_date = "2026-06-27"
+
+[vars]
+AUTH0_DOMAIN = "your-tenant.auth0.com"
+AUTH0_AUDIENCE = "https://your-domain.example/api"
+ADMIN_API_TOKEN_SHA256 = "__REMOVED_ADMIN_API_TOKEN_SHA256__"
+
+[[d1_databases]]
+binding = "GALLERY_DB"
+database_name = "compareblur-gallery"
+database_id = "5d671e52-b0ff-488e-aab5-9ce88c5cf1fa"
+preview_database_id = "GALLERY_DB"
+
+[[r2_buckets]]
+binding = "GALLERY_BUCKET"
+bucket_name = "compareblur-gallery"
