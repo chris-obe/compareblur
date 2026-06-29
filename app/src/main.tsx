@@ -8,6 +8,7 @@ import { ThemeProvider } from './store/ThemeProvider';
 import { KitProvider } from './store/KitProvider';
 import { CompareProvider } from './store/CompareProvider';
 import { CatalogProvider } from './store/CatalogProvider';
+import { ReactionsProvider } from './store/ReactionsProvider';
 import './index.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
@@ -19,7 +20,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             <CatalogProvider>
               <KitProvider>
                 <CompareProvider>
-                  <App />
+                  <ReactionsProvider>
+                    <App />
+                  </ReactionsProvider>
                 </CompareProvider>
               </KitProvider>
             </CatalogProvider>

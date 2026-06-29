@@ -5,6 +5,7 @@ import { FORMATS, cropFactor, diagonal, type Format } from '../../lib/engine';
 import { computeMatch } from '../../lib/match';
 import { useKit } from '../../store/KitProvider';
 import { useCompare, nextSystemId } from '../../store/CompareProvider';
+import { ReactionBar } from '../ui/ReactionBar';
 import type { ViewEntry } from '../../lib/types';
 
 const r1 = (n: number) => Math.round(n * 10) / 10;
@@ -110,6 +111,13 @@ export function LightboxInfo({ entry }: { entry: ViewEntry }) {
         <div className="text-sm font-bold">{entry.title}</div>
         <div className="label mt-1">{entry.metaLine}</div>
       </div>
+
+      {entry.id !== 'upload' && (
+        <div>
+          <div className="label mb-2">What did you think?</div>
+          <ReactionBar photoId={entry.id} mode="expanded" />
+        </div>
+      )}
 
       {/* Source — the format dropdown only appears when the format is uncertain
           (an upload the tool had to guess); otherwise it's known, so we hide it. */}
