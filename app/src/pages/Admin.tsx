@@ -13,14 +13,17 @@ import {
 import { Button } from '../components/ui/Button';
 import { Chip } from '../components/ui/Chip';
 import { isDevAdminBypass } from '../auth/adminAccess';
+import { useAdminAccess } from '../auth/AdminAccessProvider';
 import { adminAuthorizationParams, adminTokenParams } from '../auth/config';
 import {
   AdminApiError,
   getAdminIdentity,
+  getAdminUsers,
   getCatalogAdminStatus,
   triggerCatalogRefresh,
   updateCatalogAdminSettings,
   type AdminIdentity,
+  type AdminUsersResponse,
   type CatalogAdminStatus,
 } from '../lib/adminApi';
 import { listAdminGalleryPhotos, type AdminGalleryPhoto } from '../lib/galleryApi';
@@ -66,42 +69,14 @@ function statusTone(status?: string | null): string {
 }
 
 function AdminGate({ children }: AdminGateProps) {
-  const { getAccessTokenSilently, isAuthenticated, isLoading, loginWithRedirect } = useAuth0();
-  const [checking, setChecking] = useState(false);
-  const [denied, setDenied] = useState<string | null>(null);
-  const [verified, setVerified] = useState(false);
-  const devBypass = isDevAdminBypass();
+  const { loginWithRedirect } = useAuth0();
+  const { status, error } = useAdminAccess();
 
-  useEffect(() => {
-    if (devBypass || !isAuthenticated) return;
-
-    let cancelled = false;
-    setChecking(true);
-    setDenied(null);
-    setVerified(false);
-
-    getAccessTokenSilently({ authorizationParams: adminTokenParams })
-      .then((token) => getAdminIdentity(token))
-      .then(() => {
-        if (!cancelled) setVerified(true);
-      })
-      .catch((error) => {
-        if (!cancelled) setDenied(error instanceof Error ? error.message : 'Admin authorization failed');
-      })
-      .finally(() => {
-        if (!cancelled) setChecking(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [devBypass, getAccessTokenSilently, isAuthenticated]);
-
-  if (isLoading && !devBypass) {
-    return <AdminNotice title="Checking access" detail="Confirming your session before loading admin controls." />;
+  if (status === 'loading' || status === 'checking') {
+    return <AdminNotice title="Checking access" detail="Verifying your Auth0 admin permissions." />;
   }
 
-  if (!devBypass && !isAuthenticated) {
+  if (status === 'anonymous') {
     return (
       <AdminNotice
         title="Admin sign in required"
@@ -123,16 +98,8 @@ function AdminGate({ children }: AdminGateProps) {
     );
   }
 
-  if (checking) {
-    return <AdminNotice title="Checking access" detail="Verifying your Auth0 admin permissions." />;
-  }
-
-  if (denied) {
-    return <AdminNotice title="Not authorized" detail={denied} />;
-  }
-
-  if (!devBypass && !verified) {
-    return <AdminNotice title="Checking access" detail="Waiting for admin authorization." />;
+  if (status === 'denied') {
+    return <AdminNotice title="Not authorized" detail={error ?? 'Your account lacks the admin role.'} />;
   }
 
   return <>{children}</>;
@@ -172,7 +139,7 @@ export function Admin() {
 }
 
 function AdminConsole() {
-  const { getAccessTokenSilently, isAuthenticated } = useAuth0();
+  const { getAccessTokenSilently, isAuthenticated, user } = useAuth0();
   const catalog = useCatalog();
   const [section, setSection] = useState<AdminSection>('overview');
   const [adminIdentity, setAdminIdentity] = useState<AdminIdentity | null>(null);
@@ -182,14 +149,25 @@ function AdminConsole() {
   const [galleryLoading, setGalleryLoading] = useState(false);
   const [galleryLoaded, setGalleryLoaded] = useState(false);
   const [galleryError, setGalleryError] = useState<string | null>(null);
+  const [usersResponse, setUsersResponse] = useState<AdminUsersResponse | null>(null);
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [usersQuery, setUsersQuery] = useState('');
+  const [usersError, setUsersError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const devBypass = isDevAdminBypass();
+  // Human-readable, low-maintenance: prefer a real name/email from the admin
+  // identity or the Auth0 ID-token claims; never surface the raw `auth0|…` sub.
   const accessLabel = devBypass
     ? 'Development bypass'
-    : adminIdentity?.email ?? adminIdentity?.name ?? adminIdentity?.sub ?? 'Authorized';
+    : adminIdentity?.name ??
+      adminIdentity?.email ??
+      user?.name ??
+      user?.email ??
+      user?.nickname ??
+      'Admin user';
 
   const getToken = async () => {
     if (!isAuthenticated) return undefined;
@@ -239,10 +217,32 @@ function AdminConsole() {
     }
   };
 
+  const loadUsers = async (query = usersQuery) => {
+    if (devBypass && !isAuthenticated) {
+      setUsersError('Sign in with Auth0 to inspect registered users.');
+      return;
+    }
+
+    setUsersLoading(true);
+    setUsersError(null);
+    try {
+      const token = await getToken();
+      if (!token) throw new Error('Auth0 access token is unavailable.');
+      setUsersResponse(await getAdminUsers(token, { q: query, perPage: 50 }));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Users API failed';
+      setUsersError(message);
+      setError(message);
+    } finally {
+      setUsersLoading(false);
+    }
+  };
+
   useEffect(() => {
     void loadIdentity();
     void loadStatus();
     void loadGallery();
+    if (isAuthenticated) void loadUsers('');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated]);
 
@@ -255,8 +255,8 @@ function AdminConsole() {
       },
       {
         label: 'Users',
-        value: 'Not connected',
-        detail: 'Waiting for user/profile API',
+        value: usersResponse ? `${usersResponse.total} registered` : usersLoading ? 'Loading' : 'Unavailable',
+        detail: usersError ?? `${usersResponse?.stats.activeLast30Days ?? 0} active in 30 days`,
       },
       {
         label: 'Gallery',
@@ -269,8 +269,18 @@ function AdminConsole() {
         detail: status?.export?.key ?? 'R2 media and catalog objects',
       },
     ],
-    [catalog.source, catalog.status, galleryError, galleryLoaded, galleryPhotos, status],
+    [catalog.source, catalog.status, galleryError, galleryLoaded, galleryPhotos, status, usersError, usersLoading, usersResponse],
   );
+
+  // Master refresh: reload every section's data at once.
+  const refreshAll = async () => {
+    await Promise.allSettled([
+      loadIdentity(),
+      loadStatus(),
+      loadGallery(),
+      isAuthenticated ? loadUsers(usersQuery) : Promise.resolve(),
+    ]);
+  };
 
   const refreshNow = async () => {
     setSaving(true);
@@ -334,9 +344,13 @@ function AdminConsole() {
               {accessLabel}
             </span>
             {devBypass && <Chip active>Dev open</Chip>}
-            <Button onClick={loadStatus} disabled={loading || saving}>
+            <Button
+              onClick={refreshAll}
+              disabled={loading || saving || galleryLoading || usersLoading}
+              title="Reload catalog status, gallery and users"
+            >
               <RefreshCw size={14} strokeWidth={1.5} />
-              Reload
+              Refresh all
             </Button>
           </div>
         </div>
@@ -398,7 +412,16 @@ function AdminConsole() {
               onError={setError}
             />
           )}
-          {section === 'users' && <UsersSection />}
+          {section === 'users' && (
+            <UsersSection
+              response={usersResponse}
+              query={usersQuery}
+              loading={usersLoading}
+              error={usersError}
+              onQueryChange={setUsersQuery}
+              onReload={() => loadUsers(usersQuery)}
+            />
+          )}
           {section === 'storage' && <StorageSection exportStatus={status?.export ?? null} />}
         </section>
       </div>
@@ -428,7 +451,8 @@ function OverviewSection({
                 ['Catalog status', 'Live'],
                 ['Catalog refresh', 'Live'],
                 ['Gallery approvals', galleryLoaded ? 'Live' : 'Checking'],
-                ['User role assignment', 'API needed'],
+                ['Auth0 user lookup', 'Live'],
+                ['User role assignment', 'Read-only'],
                 ['R2 media browser', galleryLoaded ? 'Live' : 'Checking'],
                 ['Audit history', 'API needed'],
               ].map(([item, state]) => (
@@ -490,20 +514,26 @@ function CatalogSection({
         <div className="space-y-4">
           <div className="border border-line p-3">
             <div className="label mb-2">Auto refresh</div>
-            <div className="mb-3 flex items-center justify-between gap-3 text-sm">
+            <button
+              type="button"
+              role="switch"
+              aria-checked={!!status?.settings.autoRefreshEnabled}
+              onClick={onToggleAutoRefresh}
+              disabled={!status || loading || saving}
+              className="flex w-full items-center justify-between gap-3 text-sm disabled:cursor-not-allowed disabled:opacity-40"
+            >
               <span>{status?.settings.autoRefreshEnabled ? 'Enabled' : 'Disabled'}</span>
               <span
                 className={[
                   'inline-flex h-6 w-10 items-center border transition-colors',
-                  status?.settings.autoRefreshEnabled ? 'justify-end bg-fg' : 'justify-start bg-transparent',
+                  status?.settings.autoRefreshEnabled
+                    ? 'justify-end border-fg bg-fg'
+                    : 'justify-start border-line bg-transparent',
                 ].join(' ')}
               >
-                <span className="m-1 h-3.5 w-3.5 bg-bg" />
+                <span className={['m-1 h-3.5 w-3.5', status?.settings.autoRefreshEnabled ? 'bg-bg' : 'bg-fg'].join(' ')} />
               </span>
-            </div>
-            <Button onClick={onToggleAutoRefresh} disabled={!status || loading || saving}>
-              Toggle
-            </Button>
+            </button>
           </div>
 
           <label className="block border border-line p-3">
@@ -514,7 +544,7 @@ function CatalogSection({
               max={365}
               value={draftDays}
               onChange={(event) => setDraftDays(Number(event.target.value))}
-              className="mb-3 w-full border border-line bg-transparent px-3 py-2 text-sm outline-none focus:border-line-strong"
+              className="mb-3 h-9 w-full border border-line bg-transparent px-3 text-sm outline-none focus:border-line-strong"
             />
             <Button
               onClick={() => onUpdateInterval(draftDays)}
@@ -566,17 +596,156 @@ function GalleryModerationSection({
   );
 }
 
-function UsersSection() {
+function UsersSection({
+  response,
+  query,
+  loading,
+  error,
+  onQueryChange,
+  onReload,
+}: {
+  response: AdminUsersResponse | null;
+  query: string;
+  loading: boolean;
+  error?: string | null;
+  onQueryChange: (query: string) => void;
+  onReload: () => void;
+}) {
+  const stats = response?.stats;
+  const providerRows = stats ? Object.entries(stats.providerCounts).sort((a, b) => b[1] - a[1]) : [];
+
   return (
-    <Panel title="Users and roles" icon={UserCog}>
-      <div className="border border-line p-4 text-xs">
-        <div className="mb-2 font-bold">No app-local users endpoint is present in this workspace yet.</div>
-        <div className="text-muted">
-          This should not call the Auth0 Management API from the browser. Add a server-side admin endpoint for app-local
-          profiles, saved kits, uploads, and role changes.
+    <div className="space-y-5">
+      <Panel title="Users and sign-ins" icon={UserCog}>
+        <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+          <label className="block min-w-0 flex-1">
+            <span className="label mb-2 block">Search Auth0 users</span>
+            <input
+              value={query}
+              onChange={(event) => onQueryChange(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') onReload();
+              }}
+              placeholder="email, name, provider, or Auth0 query"
+              className="h-9 w-full border border-line bg-transparent px-3 text-sm outline-none focus:border-line-strong"
+            />
+          </label>
+          <Button onClick={onReload} disabled={loading} className="h-9 shrink-0">
+            <RefreshCw size={14} strokeWidth={1.5} />
+            {loading ? 'Loading' : 'Reload users'}
+          </Button>
         </div>
-      </div>
-    </Panel>
+
+        {error && (
+          <div className="mb-4 border border-line bg-faint p-3 text-xs">
+            <span className="inline-flex items-center gap-2">
+              <AlertTriangle size={14} strokeWidth={1.5} />
+              {error}
+            </span>
+          </div>
+        )}
+
+        <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <SmallStat label="Registered" value={String(response?.total ?? 'Unknown')} detail={`${response?.returned ?? 0} visible`} />
+          <SmallStat label="Active" value={String(stats?.activeLast30Days ?? 0)} detail="Last 30 days" />
+          <SmallStat label="New" value={String(stats?.createdLast7Days ?? 0)} detail="Last 7 days" />
+          <SmallStat label="Verified" value={String(stats?.verifiedEmail ?? 0)} detail={`${stats?.unverifiedEmail ?? 0} unverified`} />
+        </div>
+
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_18rem]">
+          <div className="overflow-x-auto border border-line">
+            <table className="w-full min-w-[48rem] text-left text-xs">
+              <thead className="border-b border-line bg-faint text-muted">
+                <tr>
+                  <th className="px-3 py-2 font-normal uppercase tracking-wide">User</th>
+                  <th className="px-3 py-2 font-normal uppercase tracking-wide">Provider</th>
+                  <th className="px-3 py-2 font-normal uppercase tracking-wide">Logins</th>
+                  <th className="px-3 py-2 font-normal uppercase tracking-wide">Last login</th>
+                  <th className="px-3 py-2 font-normal uppercase tracking-wide">Created</th>
+                  <th className="px-3 py-2 font-normal uppercase tracking-wide">State</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-line">
+                {(response?.users ?? []).map((user) => (
+                  <tr key={user.id}>
+                    <td className="px-3 py-3">
+                      <div className="flex min-w-0 items-center gap-3">
+                        {user.picture ? (
+                          <img src={user.picture} alt="" className="h-8 w-8 border border-line object-cover" />
+                        ) : (
+                          <div className="h-8 w-8 border border-line bg-faint" />
+                        )}
+                        <div className="min-w-0">
+                          <div className="truncate font-bold">{user.name ?? user.email ?? user.id}</div>
+                          <div className="truncate text-muted">{user.email ?? user.id}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-3 py-3">
+                      <div className="flex flex-wrap gap-1">
+                        {(user.providers.length ? user.providers : ['unknown']).map((provider) => (
+                          <span key={provider} className="border border-line px-1.5 py-0.5 uppercase tracking-wide">
+                            {provider}
+                          </span>
+                        ))}
+                      </div>
+                    </td>
+                    <td className="px-3 py-3">{user.loginsCount}</td>
+                    <td className="px-3 py-3">{formatDate(user.lastLogin)}</td>
+                    <td className="px-3 py-3">{formatDate(user.createdAt)}</td>
+                    <td className="px-3 py-3">
+                      <div className="flex flex-wrap gap-1">
+                        <span className={user.emailVerified ? 'border border-fg px-1.5 py-0.5' : 'border border-line px-1.5 py-0.5 text-muted'}>
+                          {user.emailVerified ? 'Verified' : 'Unverified'}
+                        </span>
+                        {user.blocked && <span className="border border-line-strong px-1.5 py-0.5">Blocked</span>}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {response && response.users.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="px-3 py-6 text-center text-muted">
+                      No users match this search.
+                    </td>
+                  </tr>
+                )}
+                {!response && !loading && !error && (
+                  <tr>
+                    <td colSpan={6} className="px-3 py-6 text-center text-muted">
+                      No user data loaded yet.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="space-y-4">
+            <div className="border border-line p-3">
+              <div className="label mb-3">Providers</div>
+              <div className="divide-y divide-line border border-line">
+                {providerRows.map(([provider, count]) => (
+                  <div key={provider} className="flex items-center justify-between gap-3 px-3 py-2 text-xs">
+                    <span>{provider}</span>
+                    <span className="font-bold">{count}</span>
+                  </div>
+                ))}
+                {providerRows.length === 0 && <div className="px-3 py-2 text-xs text-muted">No provider data</div>}
+              </div>
+            </div>
+
+            <div className="border border-line p-3">
+              <div className="label mb-3">Access model</div>
+              <div className="space-y-2 text-xs text-muted">
+                <p>Auth0 is the identity source for this portfolio.</p>
+                <p>App-local profiles and entitlements should still be created lazily when a product needs them.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Panel>
+    </div>
   );
 }
 

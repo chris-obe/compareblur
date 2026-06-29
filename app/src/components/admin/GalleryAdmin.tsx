@@ -285,7 +285,7 @@ export function GalleryAdmin({ accessToken, photos, loading, loaded, error, onRe
         ))}
         <Button onClick={onReload} disabled={loading}>
           <RotateCcw size={14} strokeWidth={1.5} />
-          Reload
+          Reload gallery
         </Button>
       </div>
 
