@@ -1,16 +1,17 @@
 import { useMemo, useState } from 'react';
 import { Plus } from 'lucide-react';
-import { LENSES, } from '../../data/gear.seed';
 import { lensesForMount } from '../../lib/gear';
 import { useKit } from '../../store/KitProvider';
+import { useCatalog } from '../../store/CatalogProvider';
 import { LensMultiSelect } from './LensMultiSelect';
 
 // Minimal "add lens to this mount" used on each saved mount group.
 export function AddLensToMount({ mount, formats }: { mount: string; formats: Set<string> }) {
+  const { lenses: catalogLenses } = useCatalog();
   const { lenses, addCatalogLenses } = useKit();
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
-  const compatible = useMemo(() => lensesForMount(mount, formats, LENSES), [mount, formats]);
+  const compatible = useMemo(() => lensesForMount(mount, formats, catalogLenses), [mount, formats, catalogLenses]);
   const ownedOnMount = useMemo(
     () => new Set(lenses.filter((l) => l.mount === mount && l.catalogId).map((l) => l.catalogId!)),
     [lenses, mount],

@@ -1,26 +1,32 @@
 import { useMemo, useState } from 'react';
 import { Plus } from 'lucide-react';
-import { CAMERAS, LENSES } from '../../data/gear.seed';
 import { lensesForCamera } from '../../lib/gear';
 import { useKit } from '../../store/KitProvider';
+import { useCatalog } from '../../store/CatalogProvider';
 import { LensMultiSelect } from './LensMultiSelect';
 import { SearchSelect } from '../ui/SearchSelect';
 
-const cameraOptions = CAMERAS.map((c) => ({ id: c.id, label: c.name, maker: c.maker }));
-
 // Add a camera to the kit, optionally with several compatible lenses in one move.
 export function AddCamera() {
+  const { cameras: catalogCameras, lenses: catalogLenses, status } = useCatalog();
   const { cameras, lenses, addCamera, addCatalogLenses } = useKit();
-  const [camId, setCamId] = useState(CAMERAS[0].id);
+  const [camId, setCamId] = useState(catalogCameras[0]?.id ?? '');
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
-  const camera = CAMERAS.find((c) => c.id === camId)!;
-  const compatible = useMemo(() => lensesForCamera(camera, LENSES), [camera]);
+  const cameraOptions = useMemo(
+    () => catalogCameras.map((c) => ({ id: c.id, label: c.name, maker: c.maker })),
+    [catalogCameras],
+  );
+  const camera = catalogCameras.find((c) => c.id === camId) ?? catalogCameras[0];
+  const compatible = useMemo(
+    () => (camera ? lensesForCamera(camera, catalogLenses) : []),
+    [camera, catalogLenses],
+  );
   const ownedOnMount = useMemo(
     () => new Set(lenses.filter((l) => l.mount === camera.mount && l.catalogId).map((l) => l.catalogId!)),
     [lenses, camera.mount],
   );
-  const alreadyOwnCamera = cameras.some((c) => c.catalogId === camera.id);
+  const alreadyOwnCamera = camera ? cameras.some((c) => c.catalogId === camera.id) : false;
 
   const onCam = (id: string) => {
     setCamId(id);
@@ -28,6 +34,7 @@ export function AddCamera() {
   };
 
   const commit = () => {
+    if (!camera) return;
     addCamera(camera);
     if (selected.size) {
       addCatalogLenses(
@@ -43,7 +50,7 @@ export function AddCamera() {
     <div className="space-y-3 border border-line p-4">
       <div className="grid grid-cols-2 gap-2">
         <label className="flex flex-col gap-1">
-          <span className="label">Camera</span>
+          <span className="label">Camera {status === 'loading' && '· loading catalog'}</span>
           <SearchSelect options={cameraOptions} value={camId} onChange={onCam} placeholder="Search cameras…" />
         </label>
         <label className="flex flex-col gap-1">
