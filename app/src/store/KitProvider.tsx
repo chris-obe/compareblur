@@ -43,6 +43,7 @@ export function ownedLensFromCatalog(l: CatalogLens, mount: string): OwnedLens {
     focalMax: l.focalMax,
     apMax: l.apMax,
     apMin: l.apMin,
+    aperturePoints: l.aperturePoints,
     mount,
     coversFormatIds: l.coversFormatIds,
     af: l.af,

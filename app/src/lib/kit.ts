@@ -1,4 +1,5 @@
 import { matchSystem, getFormat, type System } from './engine';
+import { maxApertureAtFocal } from './gear';
 import type { Kit, KitVerdict, OwnedLens } from './types';
 
 const r1 = (n: number) => Math.round(n * 10) / 10;
@@ -46,7 +47,8 @@ export function evaluateKit(source: System, kit: Kit): { verdict: KitVerdict } {
 
     const focalOk = reqFocal >= lens.focalMin - 0.5 && reqFocal <= lens.focalMax + 0.5;
     if (!focalOk) continue;
-    const apOk = lens.apMax <= reqAp * 1.05;
+    const lensMaxAp = maxApertureAtFocal(lens, reqFocal);
+    const apOk = lensMaxAp <= reqAp * 1.05;
 
     if (apOk && bestRank < 2) {
       best = { status: 'covered', note: `Your ${lens.name} on the ${bodyName} covers ${nearestReq}.` };
@@ -54,7 +56,7 @@ export function evaluateKit(source: System, kit: Kit): { verdict: KitVerdict } {
     } else if (!apOk && bestRank < 1) {
       best = {
         status: 'partial',
-        note: `Your ${lens.name} reaches ${r1(reqFocal)}mm but only opens to ƒ/${lens.apMax} — short of ƒ/${r1(reqAp)}.`,
+        note: `Your ${lens.name} reaches ${r1(reqFocal)}mm but only opens to ƒ/${lensMaxAp} — short of ƒ/${r1(reqAp)}.`,
       };
       bestRank = 1;
     }

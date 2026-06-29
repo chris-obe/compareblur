@@ -10,7 +10,7 @@ declare module '@engine' {
     w: number;
     h: number;
     mp?: number;
-    family?: 'digital' | 'film' | 'pano' | 'crop' | 'phone' | 'detected' | string;
+    family?: 'digital' | 'film' | 'pano' | 'crop' | 'phone' | 'compact' | 'detected' | string;
   }
 
   export interface System {

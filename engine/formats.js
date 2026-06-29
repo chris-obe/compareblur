@@ -22,6 +22,12 @@ export const FORMATS = [
   { id: 'gfx',        name: 'Fujifilm GFX (44×33)',  w: 44,   h: 33,   mp: 102, family: 'digital' },
   { id: 'phase-iq4',  name: 'Phase One IQ4 (53.4×40)', w: 53.4, h: 40,  mp: 151, family: 'digital' },
 
+  // --- Fixed-lens compact sensor classes ---
+  { id: 'compact-1in', name: '1″ compact', w: 13.2, h: 8.8, family: 'compact' },
+  { id: 'compact-2-3', name: '2/3″ compact', w: 8.8, h: 6.6, family: 'compact' },
+  { id: 'compact-1-1.7', name: '1/1.7″ compact', w: 7.53, h: 5.64, family: 'compact' },
+  { id: 'compact-1-2.3', name: '1/2.3″ compact', w: 6.16, h: 4.62, family: 'compact' },
+
   // --- Film: standard ---
   { id: 'film-135',   name: '35mm film',             w: 36,   h: 24,   family: 'film' },
   { id: 'film-645',   name: '6×4.5 (645)',           w: 56,   h: 41.5, family: 'film' },

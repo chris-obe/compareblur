@@ -1,9 +1,17 @@
 import { useMemo, useState } from 'react';
 import { Plus } from 'lucide-react';
 import { FORMATS, getFormat, type Format } from '../../lib/engine';
-import { CAMERAS, LENSES } from '../../data/gear.seed';
-import { cameraFormat, defaultFocal, lensesForCamera, type CatalogLens } from '../../lib/gear';
+import {
+  apertureRangeLabel,
+  cameraFormat,
+  defaultFocal,
+  lensesForCamera,
+  maxApertureAtFocal,
+  type AperturePoint,
+  type CatalogLens,
+} from '../../lib/gear';
 import { useKit } from '../../store/KitProvider';
+import { useCatalog } from '../../store/CatalogProvider';
 import { useCompare, nextSystemId, type CompareSystem } from '../../store/CompareProvider';
 import { NumberField } from '../ui/NumberField';
 import { groupByMaker } from '../../lib/group';
@@ -12,7 +20,6 @@ import { SearchSelect } from '../ui/SearchSelect';
 type Mode = 'camera' | 'kit' | 'manual';
 
 const shortFmt = (f: Format) => f.name.replace(/\s*\(.*?\)\s*/g, '').trim();
-const cameraOptions = CAMERAS.map((c) => ({ id: c.id, label: c.name, maker: c.maker }));
 
 const fieldCls =
   'border border-line bg-transparent px-2 py-1.5 text-xs outline-none focus:border-line-strong';
@@ -69,32 +76,37 @@ function AddButton({ onClick, disabled }: { onClick: () => void; disabled?: bool
 }
 
 function CameraMode({ onAdd }: { onAdd: (s: CompareSystem) => void }) {
-  const [camId, setCamId] = useState(CAMERAS[0].id);
-  const camera = CAMERAS.find((c) => c.id === camId)!;
-  const available = useMemo(() => lensesForCamera(camera, LENSES), [camera]);
+  const { cameras, lenses, status } = useCatalog();
+  const [camId, setCamId] = useState(cameras[0]?.id ?? '');
+  const cameraOptions = useMemo(
+    () => cameras.map((c) => ({ id: c.id, label: c.name, maker: c.maker })),
+    [cameras],
+  );
+  const camera = cameras.find((c) => c.id === camId) ?? cameras[0];
+  const available = useMemo(() => (camera ? lensesForCamera(camera, lenses) : []), [camera, lenses]);
   const lensGroups = useMemo(() => groupByMaker(available), [available]);
   const [lensId, setLensId] = useState(available[0]?.id ?? '');
   const lens = available.find((l) => l.id === lensId) ?? available[0];
 
   // controlled focal/aperture, re-seeded when the lens changes
   const [focal, setFocal] = useState(lens ? defaultFocal(lens) : 50);
-  const [aperture, setAperture] = useState(lens ? lens.apMax : 1.8);
+  const [aperture, setAperture] = useState(lens ? maxApertureAtFocal(lens, focal) : 1.8);
   const [lastLens, setLastLens] = useState(lens?.id);
   if (lens && lens.id !== lastLens) {
     setLastLens(lens.id);
     setFocal(defaultFocal(lens));
-    setAperture(lens.apMax);
+    setAperture(maxApertureAtFocal(lens, defaultFocal(lens)));
   }
 
   const onCam = (id: string) => {
     setCamId(id);
-    const cam = CAMERAS.find((c) => c.id === id)!;
-    const first = lensesForCamera(cam, LENSES)[0];
+    const cam = cameras.find((c) => c.id === id);
+    const first = cam ? lensesForCamera(cam, lenses)[0] : undefined;
     setLensId(first?.id ?? '');
   };
 
   const submit = () => {
-    if (!lens) return;
+    if (!lens || !camera) return;
     onAdd({
       id: nextSystemId(),
       context: camera.name,
@@ -109,7 +121,12 @@ function CameraMode({ onAdd }: { onAdd: (s: CompareSystem) => void }) {
       <div className="grid grid-cols-2 gap-2">
         <label className="flex flex-col gap-1">
           <span className="label">Camera</span>
-          <SearchSelect options={cameraOptions} value={camId} onChange={onCam} placeholder="Search cameras…" />
+          <SearchSelect
+            options={cameraOptions}
+            value={camId}
+            onChange={onCam}
+            placeholder={status === 'loading' ? 'Loading catalog…' : 'Search cameras…'}
+          />
         </label>
         <label className="flex flex-col gap-1">
           <span className="label">Lens ({available.length} available)</span>
@@ -144,6 +161,7 @@ interface KitCombo {
   focalMax: number;
   apMax: number;
   apMin: number;
+  aperturePoints?: AperturePoint[];
   type: 'prime' | 'zoom';
 }
 
@@ -166,6 +184,7 @@ function KitMode({ onAdd }: { onAdd: (s: CompareSystem) => void }) {
           focalMax: lens.focalMax,
           apMax: lens.apMax,
           apMin: lens.apMin,
+          aperturePoints: lens.aperturePoints,
           type: lens.type,
         });
       }
@@ -176,12 +195,12 @@ function KitMode({ onAdd }: { onAdd: (s: CompareSystem) => void }) {
   const [comboId, setComboId] = useState(combos[0]?.id ?? '');
   const combo = combos.find((c) => c.id === comboId) ?? combos[0];
   const [focal, setFocal] = useState(combo?.focalMin ?? 50);
-  const [aperture, setAperture] = useState(combo?.apMax ?? 1.8);
+  const [aperture, setAperture] = useState(combo ? maxApertureAtFocal(combo, combo.focalMin) : 1.8);
   const [last, setLast] = useState(combo?.id);
   if (combo && combo.id !== last) {
     setLast(combo.id);
     setFocal(combo.focalMin);
-    setAperture(combo.apMax);
+    setAperture(maxApertureAtFocal(combo, combo.focalMin));
   }
 
   if (combos.length === 0)
@@ -257,13 +276,19 @@ function FocalAperture({
   setFocal,
   setAperture,
 }: {
-  lens: Pick<CatalogLens, 'focalMin' | 'focalMax' | 'apMax' | 'apMin' | 'type'>;
+  lens: Pick<CatalogLens, 'focalMin' | 'focalMax' | 'apMax' | 'apMin' | 'aperturePoints' | 'type'>;
   focal: number;
   aperture: number;
   setFocal: (n: number) => void;
   setAperture: (n: number) => void;
 }) {
   const isZoom = lens.focalMax > lens.focalMin;
+  const maxAtFocal = maxApertureAtFocal(lens, focal);
+  const commitFocal = (next: number) => {
+    setFocal(next);
+    const nextMax = maxApertureAtFocal(lens, next);
+    if (aperture < nextMax) setAperture(nextMax);
+  };
   return (
     <div className="grid grid-cols-2 gap-2">
       <label className="flex flex-col gap-1">
@@ -272,7 +297,7 @@ function FocalAperture({
         </span>
         <NumberField
           value={focal}
-          onCommit={setFocal}
+          onCommit={commitFocal}
           min={lens.focalMin}
           max={lens.focalMax}
           disabled={!isZoom}
@@ -280,11 +305,11 @@ function FocalAperture({
         />
       </label>
       <label className="flex flex-col gap-1">
-        <span className="label">Aperture (ƒ/{lens.apMax}–{lens.apMin})</span>
+        <span className="label">Aperture ({apertureRangeLabel(lens)} lens)</span>
         <NumberField
           value={aperture}
           onCommit={setAperture}
-          min={lens.apMax}
+          min={maxAtFocal}
           max={lens.apMin}
           step={0.1}
           className={fieldCls}

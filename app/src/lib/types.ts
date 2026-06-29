@@ -24,6 +24,7 @@ export interface OwnedLens {
   focalMax: number; // == focalMin for primes
   apMax: number; // widest aperture (smaller number)
   apMin: number;
+  aperturePoints?: { focal: number; maxAperture: number }[];
   mount: string;
   coversFormatIds: string[]; // sensor formats the image circle covers
   af?: boolean;
