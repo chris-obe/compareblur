@@ -5,6 +5,11 @@
   "scripts": {
     "setup": "cd app && bun install",
     "dev": "cd app && bun run dev",
+    "catalog:build": "node catalog/src/build.mjs",
+    "catalog:check": "node catalog/src/check.mjs",
+    "catalog:worker:dev": "npx wrangler@latest dev --config workers/catalog-sync/wrangler.toml",
+    "catalog:worker:deploy": "npx wrangler@latest deploy --config workers/catalog-sync/wrangler.toml",
+    "gallery:migrate-seed": "node scripts/migrate-gallery-seed.mjs",
     "build": "cd app && npm ci && npm run build",
     "preview": "cd app && bun run preview"
   }

@@ -1,0 +1,17 @@
+name = "compareblur-catalog-sync"
+main = "src/index.js"
+compatibility_date = "2026-06-27"
+workers_dev = true
+preview_urls = false
+
+[triggers]
+crons = ["23 3 * * *"]
+
+[[d1_databases]]
+binding = "CATALOG_DB"
+database_name = "compareblur-catalog"
+database_id = "c9abf503-e4c8-440d-b4ac-2c5a0f506435"
+
+[[r2_buckets]]
+binding = "CATALOG_BUCKET"
+bucket_name = "compareblur-catalog"
