@@ -9,6 +9,7 @@ import {
 import { adminAuthError, requireAdmin } from '../../../_lib/admin';
 import { galleryFormatIdOrDefault } from '../../../_lib/formats';
 import { findMissingGalleryTags } from '../../../_lib/galleryTags';
+import { subjectPresetValue, subjectWidthForPreset } from '../../../_lib/subjectDistance';
 
 type Env = GalleryEnv & {
   AUTH0_AUDIENCE?: string;
@@ -39,8 +40,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ env, request }) => {
 };
 
 export const onRequestPost: PagesFunction<Env> = async ({ env, request }) => {
+  let identity;
   try {
-    await requireAdmin(request, env, ['admin:access']);
+    identity = await requireAdmin(request, env, ['admin:access']);
   } catch (error) {
     return adminAuthError(error);
   }
@@ -70,6 +72,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ env, request }) => {
   if (missingTags.length > 0) {
     return json({ error: `Unknown gallery tag: ${missingTags.join(', ')}` }, { status: 400 });
   }
+  const subjectPreset = subjectPresetValue(form.get('subjectPreset'));
+  if (!subjectPreset) return json({ error: 'subject distance preset is required' }, { status: 400 });
+  const subjectWidthM = subjectWidthForPreset(subjectPreset);
 
   await env.GALLERY_BUCKET.put(objectKey, file.stream(), {
     httpMetadata: { contentType: file.type || 'application/octet-stream' },
@@ -77,13 +82,14 @@ export const onRequestPost: PagesFunction<Env> = async ({ env, request }) => {
   });
 
   const publishedAt = status === 'approved' ? now : null;
+  const submittedBy = stringOrNull(form.get('submittedBy')) ?? identity.sub;
   await env.GALLERY_DB.prepare(
     `INSERT INTO gallery_photos (
       id, title, author, status, object_key, content_type, width, height,
       format_id, camera, camera_catalog_id, lens, lens_catalog_id, focal, aperture,
-      tags_json, metadata_source_json, submitted_by, notes, created_at, updated_at,
-      published_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      subject_preset, subject_width_m, tags_json, metadata_source_json, submitted_by,
+      notes, created_at, updated_at, published_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
     .bind(
       id,
@@ -101,9 +107,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ env, request }) => {
       stringOrNull(form.get('lensCatalogId')),
       numberOrDefault(form.get('focal'), 50),
       numberOrDefault(form.get('aperture'), 1.8),
+      subjectPreset,
+      subjectWidthM,
       JSON.stringify(tags),
       stringOrNull(form.get('metadataSource')),
-      String(form.get('submittedBy') ?? ''),
+      submittedBy,
       String(form.get('notes') ?? ''),
       now,
       now,

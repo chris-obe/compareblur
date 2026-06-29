@@ -26,6 +26,8 @@ export interface GalleryRow {
   lens_catalog_id: string | null;
   focal: number;
   aperture: number;
+  subject_preset?: string | null;
+  subject_width_m?: number | null;
   tags_json: string;
   metadata_source_json: string | null;
   submitted_by: string | null;
@@ -60,6 +62,8 @@ export function photoFromRow(row: GalleryRow, admin = false, reactionCounts?: Ga
     lensCatalogId: admin ? row.lens_catalog_id ?? undefined : undefined,
     focal: row.focal,
     aperture: row.aperture,
+    subjectPreset: row.subject_preset ?? 'full-body',
+    subjectWidthM: row.subject_width_m ?? 2,
     tags: parseTags(row.tags_json),
     reactionCounts,
     metadataSource: admin ? parseMetadataSource(row.metadata_source_json) : undefined,

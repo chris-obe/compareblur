@@ -46,6 +46,8 @@ export interface GalleryItem {
   lens: string;
   focal: number; // mm (actual on the format)
   aperture: number; // f-number
+  subjectPreset?: string;
+  subjectWidthM?: number;
   tags: string[];
   reactionCounts?: ReactionCounts;
 }
@@ -74,6 +76,8 @@ export interface ViewEntry {
   format: Format;
   focal: number;
   aperture: number;
+  subjectPreset?: string;
+  subjectWidthM?: number;
   guessed: boolean;
   morph: boolean;
 }

@@ -23,6 +23,8 @@ function toEntry(item: GalleryItem): ViewEntry {
     format,
     focal: item.focal,
     aperture: item.aperture,
+    subjectPreset: item.subjectPreset,
+    subjectWidthM: item.subjectWidthM,
     guessed: fallbackUsed,
     morph: true,
   };
@@ -135,6 +137,8 @@ export function GalleryPage() {
         format: metadata.format,
         focal: metadata.focal,
         aperture: metadata.aperture,
+        subjectPreset: undefined,
+        subjectWidthM: undefined,
         guessed: metadata.source.exif.guessedFormat && metadata.cameraConfidence === 'none',
         morph: false,
       };

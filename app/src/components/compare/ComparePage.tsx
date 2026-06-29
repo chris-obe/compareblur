@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { Trash2 } from 'lucide-react';
 import { useCompare, systemLabel } from '../../store/CompareProvider';
 import { BlurChart, DashSwatch } from './BlurChart';
@@ -10,8 +9,7 @@ const slotField =
   'w-16 border border-line bg-transparent px-1.5 py-1 text-xs outline-none focus:border-line-strong';
 
 export function ComparePage() {
-  const { systems, remove, update, clear } = useCompare();
-  const [subjectWidth, setSubjectWidth] = useState(2);
+  const { systems, remove, update, clear, subjectWidthM, setSubjectWidthM } = useCompare();
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 p-6">
@@ -22,9 +20,9 @@ export function ComparePage() {
         </p>
       </div>
 
-      <SubjectControl width={subjectWidth} onChange={setSubjectWidth} />
+      <SubjectControl width={subjectWidthM} onChange={setSubjectWidthM} />
 
-      <BlurChart systems={systems} subjectWidthM={subjectWidth} />
+      <BlurChart systems={systems} subjectWidthM={subjectWidthM} />
 
       {/* the systems being compared */}
       {systems.length > 0 && (

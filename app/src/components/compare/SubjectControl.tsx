@@ -1,34 +1,28 @@
 import { NumberField } from '../ui/NumberField';
+import { SUBJECT_DISTANCE_PRESETS } from '../../lib/subjectDistance';
 
 interface Props {
   width: number;
   onChange: (w: number) => void;
 }
 
-const PRESETS: { label: string; w: number }[] = [
-  { label: 'Face', w: 0.5 },
-  { label: 'Half body', w: 1 },
-  { label: 'Full body', w: 2 },
-  { label: 'Group', w: 4 },
-];
-
 // What you're framing sets the subject distance, which scales the whole curve.
 export function SubjectControl({ width, onChange }: Props) {
-  const isPreset = PRESETS.some((p) => p.w === width);
+  const isPreset = SUBJECT_DISTANCE_PRESETS.some((preset) => preset.widthM === width);
   return (
     <div className="flex flex-wrap items-center gap-2">
       <span className="label mr-1">Subject</span>
-      {PRESETS.map((p) => (
+      {SUBJECT_DISTANCE_PRESETS.map((preset) => (
         <button
-          key={p.label}
+          key={preset.id}
           type="button"
-          onClick={() => onChange(p.w)}
+          onClick={() => onChange(preset.widthM)}
           className={[
             'border px-2.5 py-1 text-xs transition-colors',
-            width === p.w ? 'border-fg bg-fg text-bg' : 'border-line text-fg hover:border-line-strong',
+            width === preset.widthM ? 'border-fg bg-fg text-bg' : 'border-line text-fg hover:border-line-strong',
           ].join(' ')}
         >
-          {p.label}
+          {preset.label}
         </button>
       ))}
       <label

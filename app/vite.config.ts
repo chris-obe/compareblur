@@ -153,6 +153,17 @@ function galleryApiProxy(): Plugin {
   };
 }
 
+function accountApiProxy(): Plugin {
+  return {
+    name: 'account-api-proxy',
+    configureServer(server: ViteDevServer) {
+      server.middlewares.use('/api/account', (req: IncomingMessage, res: ServerResponse) => {
+        proxyRequest(req, res, adminPagesOrigin, `/api/account${req.url ?? ''}`);
+      });
+    },
+  };
+}
+
 function proxyRequest(
   req: IncomingMessage,
   res: ServerResponse,
@@ -200,7 +211,7 @@ function proxyRequest(
 // The optics engine lives in the sibling /engine directory and is shared
 // (the legacy site + demos import it too), so we alias instead of copying.
 export default defineConfig({
-  plugins: [react(), tailwindcss(), adminIdentityProxy(), catalogAdminProxy(), galleryApiProxy()],
+  plugins: [react(), tailwindcss(), adminIdentityProxy(), catalogAdminProxy(), galleryApiProxy(), accountApiProxy()],
   resolve: {
     alias: {
       '@engine': resolve(__dirname, '../engine/index.js'),
