@@ -8,6 +8,13 @@ import {
   type AdminGalleryPhoto,
   type GalleryStatus,
 } from '../../lib/galleryApi';
+import {
+  GALLERY_UPLOAD_MAX_BYTES,
+  GALLERY_UPLOAD_MAX_LONG_EDGE,
+  processGalleryUploadImage,
+  type ImageProcessingProgress,
+  type ProcessedImage,
+} from '../../lib/imageProcessing';
 import { suggestGalleryMetadata, type GalleryMetadataSuggestion } from '../../lib/galleryMetadata';
 import { useCatalog } from '../../store/CatalogProvider';
 
@@ -64,6 +71,8 @@ export function GalleryAdmin({ accessToken, photos, loading, loaded, error, onRe
   const [suggestion, setSuggestion] = useState<GalleryMetadataSuggestion | null>(null);
   const [fields, setFields] = useState<UploadFields>(INITIAL_FIELDS);
   const [editing, setEditing] = useState<{ id: string; fields: UploadFields } | null>(null);
+  const [processing, setProcessing] = useState<ImageProcessingProgress | null>(null);
+  const [processedImage, setProcessedImage] = useState<ProcessedImage | null>(null);
 
   useEffect(() => {
     return () => {
@@ -99,6 +108,8 @@ export function GalleryAdmin({ accessToken, photos, loading, loaded, error, onRe
     setPreviewUrl(URL.createObjectURL(nextFile));
     setReadingExif(true);
     setSuggestion(null);
+    setProcessedImage(null);
+    setProcessing(null);
 
     try {
       const next = await suggestGalleryMetadata(nextFile, cameras, lenses);
@@ -129,6 +140,8 @@ export function GalleryAdmin({ accessToken, photos, loading, loaded, error, onRe
     setFile(null);
     setPreviewUrl(null);
     setSuggestion(null);
+    setProcessedImage(null);
+    setProcessing(null);
     setFields(INITIAL_FIELDS);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
@@ -201,8 +214,18 @@ export function GalleryAdmin({ accessToken, photos, loading, loaded, error, onRe
       return;
     }
 
+    let image: ProcessedImage;
+    try {
+      image = await processGalleryUploadImage(file, setProcessing);
+      setProcessedImage(image);
+    } catch (err) {
+      setProcessing(null);
+      onError(err instanceof Error ? err.message : 'Could not process image for upload');
+      return;
+    }
+
     const form = new FormData();
-    form.set('file', file);
+    form.set('file', image.file);
     form.set('title', fields.title);
     form.set('author', fields.author);
     form.set('camera', fields.camera);
@@ -214,11 +237,23 @@ export function GalleryAdmin({ accessToken, photos, loading, loaded, error, onRe
     form.set('aperture', fields.aperture);
     form.set('tags', fields.tags);
     form.set('status', fields.status);
-    if (suggestion?.width) form.set('width', String(suggestion.width));
-    if (suggestion?.height) form.set('height', String(suggestion.height));
-    if (suggestion?.source) form.set('metadataSource', JSON.stringify(suggestion.source));
+    form.set('width', String(image.width));
+    form.set('height', String(image.height));
+    form.set('metadataSource', JSON.stringify({
+      ...(suggestion?.source ?? {}),
+      processing: {
+        originalBytes: image.originalBytes,
+        processedBytes: image.processedBytes,
+        width: image.width,
+        height: image.height,
+        contentType: image.contentType,
+        maxLongEdge: GALLERY_UPLOAD_MAX_LONG_EDGE,
+        maxBytes: GALLERY_UPLOAD_MAX_BYTES,
+      },
+    }));
 
     setUploading(true);
+    setProcessing({ stage: 'uploading', label: 'Uploading to Cloudflare', percent: 100 });
     try {
       await uploadAdminGalleryPhoto(form, accessToken);
       resetUpload();
@@ -227,6 +262,7 @@ export function GalleryAdmin({ accessToken, photos, loading, loaded, error, onRe
       onError(err instanceof Error ? err.message : 'Gallery upload failed');
     } finally {
       setUploading(false);
+      setProcessing(null);
     }
   };
 
@@ -279,6 +315,25 @@ export function GalleryAdmin({ accessToken, photos, loading, loaded, error, onRe
             <div className="text-xs">
               <div className="truncate font-bold">{file?.name ?? 'No image selected'}</div>
               <div className="mt-1 text-muted">{readingExif ? 'Reading EXIF and matching catalog…' : uploadHint(suggestion)}</div>
+              <div className="mt-1 text-muted">
+                Upload target: {GALLERY_UPLOAD_MAX_LONG_EDGE}px long edge, {formatBytes(GALLERY_UPLOAD_MAX_BYTES)} max
+              </div>
+              {processedImage && (
+                <div className="mt-1 text-muted">
+                  Processed: {processedImage.width}×{processedImage.height}, {formatBytes(processedImage.processedBytes)}
+                </div>
+              )}
+              {processing && (
+                <div className="mt-2">
+                  <div className="mb-1 flex justify-between gap-3 text-muted">
+                    <span>{processing.label}</span>
+                    <span>{processing.percent}%</span>
+                  </div>
+                  <div className="h-1.5 w-full bg-line">
+                    <div className="h-full bg-fg transition-all" style={{ width: `${processing.percent}%` }} />
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -300,9 +355,9 @@ export function GalleryAdmin({ accessToken, photos, loading, loaded, error, onRe
             <Field className="lg:col-span-3" label="Tags" value={fields.tags} onChange={(value) => setField('tags', value)} placeholder="portrait, bokeh" />
 
             <div className="flex flex-wrap items-end gap-2 lg:col-span-2">
-              <Button variant="solid" disabled={uploading || readingExif || !file || !fields.title}>
+              <Button variant="solid" disabled={uploading || !!processing || readingExif || !file || !fields.title}>
                 <Send size={14} strokeWidth={1.5} />
-                Send to Cloudflare
+                {processing ? 'Processing' : 'Send to Cloudflare'}
               </Button>
               <Button type="button" onClick={resetUpload} disabled={uploading && !file}>
                 Reset
@@ -493,6 +548,12 @@ function normalizeTagList(value: string): string[] {
 function numberOrFallback(value: string, fallback: number): number {
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
+}
+
+function formatBytes(value: number): string {
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${Math.round(value / 102.4) / 10} KB`;
+  return `${Math.round(value / 1024 / 102.4) / 10} MB`;
 }
 
 function uploadHint(suggestion: GalleryMetadataSuggestion | null): string {

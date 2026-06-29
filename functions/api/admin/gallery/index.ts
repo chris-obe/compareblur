@@ -15,6 +15,8 @@ type Env = GalleryEnv & {
   ADMIN_API_TOKEN?: string;
 };
 
+const MAX_GALLERY_UPLOAD_BYTES = 1024 * 1024;
+
 export const onRequestGet: PagesFunction<Env> = async ({ env, request }) => {
   try {
     await requireAdmin(request, env, ['admin:access']);
@@ -44,11 +46,14 @@ export const onRequestPost: PagesFunction<Env> = async ({ env, request }) => {
   const form = await request.formData();
   const file = form.get('file');
   if (!(file instanceof File)) return json({ error: 'file is required' }, { status: 400 });
+  if (file.size > MAX_GALLERY_UPLOAD_BYTES) {
+    return json({ error: 'gallery image must be 1 MB or smaller after processing' }, { status: 413 });
+  }
 
   const title = String(form.get('title') ?? file.name).trim();
   const now = new Date().toISOString();
   const id = cleanId(String(form.get('id') ?? title)) || crypto.randomUUID();
-  const ext = file.name.includes('.') ? file.name.split('.').pop() : 'jpg';
+  const ext = extensionForFile(file);
   const objectKey = `photos/${id}/original.${ext}`;
   const status = String(form.get('status') ?? 'pending');
 
@@ -115,4 +120,11 @@ function stringOrNull(value: FormDataEntryValue | null) {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
   return trimmed ? trimmed : null;
+}
+
+function extensionForFile(file: File) {
+  if (file.type === 'image/webp') return 'webp';
+  if (file.type === 'image/jpeg') return 'jpg';
+  if (file.type === 'image/png') return 'png';
+  return file.name.includes('.') ? file.name.split('.').pop() || 'jpg' : 'jpg';
 }

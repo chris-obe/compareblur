@@ -8,6 +8,7 @@ import { useCompare, nextSystemId } from '../../store/CompareProvider';
 import type { ViewEntry } from '../../lib/types';
 
 const r1 = (n: number) => Math.round(n * 10) / 10;
+const DEFAULT_TARGET_FORMAT_ID = 'ff';
 
 // "type" inch designation from the sensor diagonal (1" optical format ≈ 16mm).
 function sensorType(diagMm: number): string {
@@ -74,16 +75,16 @@ export function LightboxInfo({ entry }: { entry: ViewEntry }) {
   const { add: addToCompare } = useCompare();
   const navigate = useNavigate();
   const [format, setFormat] = useState<Format>(entry.format);
-  const [targetFormat, setTargetFormat] = useState<Format>(FORMATS.find((f) => f.id === 'ff') ?? FORMATS[0]);
+  const [targetFormatId, setTargetFormatId] = useState(DEFAULT_TARGET_FORMAT_ID);
   const [focal, setFocal] = useState(entry.focal);
   const [aperture, setAperture] = useState(entry.aperture);
 
   useEffect(() => {
     setFormat(entry.format);
-    setTargetFormat(FORMATS.find((f) => f.id === 'ff') ?? FORMATS[0]);
+    setTargetFormatId(DEFAULT_TARGET_FORMAT_ID);
     setFocal(entry.focal);
     setAperture(entry.aperture);
-  }, [entry]);
+  }, [entry.id, entry.format, entry.focal, entry.aperture]);
 
   // Include the detected format in the dropdown when it's a synthesized one
   // (phones / focal-plane sensors aren't in the static list).
@@ -92,6 +93,7 @@ export function LightboxInfo({ entry }: { entry: ViewEntry }) {
     return known ? FORMATS : [entry.format, ...FORMATS];
   }, [entry.format]);
 
+  const targetFormat = FORMATS.find((f) => f.id === targetFormatId) ?? FORMATS.find((f) => f.id === DEFAULT_TARGET_FORMAT_ID) ?? FORMATS[0];
   const m = computeMatch(format, focal, aperture, { cameras, lenses }, targetFormat);
   const verdict = m.kitEval.verdict;
   const vmap = {
@@ -141,10 +143,7 @@ export function LightboxInfo({ entry }: { entry: ViewEntry }) {
         <span className="label mb-2 block">Equivalent format</span>
         <select
           value={targetFormat.id}
-          onChange={(e) => {
-            const next = FORMATS.find((f) => f.id === e.target.value);
-            if (next) setTargetFormat(next);
-          }}
+          onChange={(e) => setTargetFormatId(e.target.value)}
           className="w-full bg-transparent text-sm font-bold outline-none"
         >
           {FORMATS.map((f) => (
