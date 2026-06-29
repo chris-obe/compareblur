@@ -10,6 +10,7 @@ import {
 import { adminAuthError, requireAdmin } from '../../../_lib/admin';
 import { galleryFormatIdOrDefault } from '../../../_lib/formats';
 import { findMissingGalleryTags } from '../../../_lib/galleryTags';
+import { subjectPresetValue, subjectWidthForPreset } from '../../../_lib/subjectDistance';
 
 type Env = GalleryEnv & {
   AUTH0_AUDIENCE?: string;
@@ -42,6 +43,11 @@ export const onRequestPatch: PagesFunction<Env> = async ({ env, params, request 
   if (missingTags.length > 0) {
     return json({ error: `Unknown gallery tag: ${missingTags.join(', ')}` }, { status: 400 });
   }
+  const subjectPreset = body.subjectPreset == null
+    ? subjectPresetValue(current.subject_preset, 'full-body')
+    : subjectPresetValue(body.subjectPreset);
+  if (!subjectPreset) return json({ error: 'subject distance preset is required' }, { status: 400 });
+  const subjectWidthM = subjectWidthForPreset(subjectPreset);
 
   const next = {
     title: stringValue(body.title, current.title),
@@ -54,6 +60,8 @@ export const onRequestPatch: PagesFunction<Env> = async ({ env, params, request 
     lensCatalogId: nullableStringValue(body.lensCatalogId, current.lens_catalog_id),
     focal: numberValue(body.focal, current.focal),
     aperture: numberValue(body.aperture, current.aperture),
+    subjectPreset,
+    subjectWidthM,
     tags,
     metadataSource: body.metadataSource == null
       ? current.metadata_source_json
@@ -67,7 +75,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ env, params, request 
     `UPDATE gallery_photos
      SET title = ?, author = ?, status = ?, format_id = ?, camera = ?, camera_catalog_id = ?,
          lens = ?, lens_catalog_id = ?, focal = ?, aperture = ?, tags_json = ?,
-         metadata_source_json = ?, notes = ?, updated_at = ?, published_at = ?
+         subject_preset = ?, subject_width_m = ?, metadata_source_json = ?, notes = ?, updated_at = ?, published_at = ?
      WHERE id = ?`,
   )
     .bind(
@@ -82,6 +90,8 @@ export const onRequestPatch: PagesFunction<Env> = async ({ env, params, request 
       next.focal,
       next.aperture,
       JSON.stringify(next.tags),
+      next.subjectPreset,
+      next.subjectWidthM,
       next.metadataSource,
       next.notes,
       now,

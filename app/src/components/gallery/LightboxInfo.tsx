@@ -190,7 +190,15 @@ export function LightboxInfo({ entry }: { entry: ViewEntry }) {
       <button
         type="button"
         onClick={() => {
-          addToCompare({ id: nextSystemId(), context: entry.title, format, focal, aperture });
+          addToCompare({
+            id: nextSystemId(),
+            context: entry.title,
+            format,
+            focal,
+            aperture,
+            subjectPreset: entry.subjectPreset,
+            subjectWidthM: entry.subjectWidthM,
+          });
           navigate('/compare');
         }}
         className="flex w-full items-center justify-center gap-2 border border-line px-3 py-2 text-xs uppercase tracking-wide transition-colors hover:border-line-strong"

@@ -4,6 +4,7 @@ import { GalleryPage } from './components/gallery/GalleryPage';
 import { Compare } from './pages/Compare';
 import { MyKit } from './pages/MyKit';
 import { Suggestions } from './pages/Suggestions';
+import { Settings } from './pages/Settings';
 import { Stub } from './pages/Stub';
 import { Admin } from './pages/Admin';
 
@@ -46,7 +47,7 @@ export default function App() {
         path="/settings"
         element={
           <AppShell title="Settings">
-            <Stub name="Settings" />
+            <Settings />
           </AppShell>
         }
       />

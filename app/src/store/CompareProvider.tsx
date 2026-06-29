@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useState, type ReactNode } from 'react';
 import type { Format } from '../lib/engine';
+import { DEFAULT_SUBJECT_DISTANCE_PRESET_ID, subjectPresetById } from '../lib/subjectDistance';
 
 // One line on the compare chart. `context` is the stable descriptor (camera,
 // format, source); focal/aperture are editable, so the display label is derived.
@@ -9,6 +10,8 @@ export interface CompareSystem {
   format: Format;
   focal: number;
   aperture: number;
+  subjectPreset?: string;
+  subjectWidthM?: number;
 }
 
 export function systemLabel(s: CompareSystem): string {
@@ -22,6 +25,8 @@ interface CompareContextValue {
   remove: (id: string) => void;
   update: (id: string, patch: Partial<CompareSystem>) => void;
   clear: () => void;
+  subjectWidthM: number;
+  setSubjectWidthM: (width: number) => void;
 }
 
 const CompareContext = createContext<CompareContextValue | null>(null);
@@ -31,8 +36,14 @@ export const nextSystemId = () => `sys-${++seq}`;
 
 export function CompareProvider({ children }: { children: ReactNode }) {
   const [systems, setSystems] = useState<CompareSystem[]>([]);
+  const [subjectWidthM, setSubjectWidthM] = useState(
+    subjectPresetById(DEFAULT_SUBJECT_DISTANCE_PRESET_ID)?.widthM ?? 2,
+  );
 
   const add = useCallback((sys: CompareSystem) => {
+    const presetWidth = subjectPresetById(sys.subjectPreset)?.widthM;
+    if (sys.subjectWidthM) setSubjectWidthM(sys.subjectWidthM);
+    else if (presetWidth) setSubjectWidthM(presetWidth);
     setSystems((prev) => (prev.length >= 4 ? prev : [...prev, sys]));
   }, []);
   const remove = useCallback((id: string) => {
@@ -44,7 +55,7 @@ export function CompareProvider({ children }: { children: ReactNode }) {
   const clear = useCallback(() => setSystems([]), []);
 
   return (
-    <CompareContext.Provider value={{ systems, add, remove, update, clear }}>
+    <CompareContext.Provider value={{ systems, add, remove, update, clear, subjectWidthM, setSubjectWidthM }}>
       {children}
     </CompareContext.Provider>
   );

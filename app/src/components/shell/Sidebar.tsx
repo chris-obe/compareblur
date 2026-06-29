@@ -1,21 +1,6 @@
 import { NavLink } from 'react-router-dom';
-import { Images, GitCompare, Aperture, Lightbulb, Shield, Settings } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
 import { useAdminAccess } from '../../auth/AdminAccessProvider';
-
-interface NavItemData {
-  to: string;
-  label: string;
-  icon: LucideIcon;
-  end?: boolean;
-}
-
-const NAV: NavItemData[] = [
-  { to: '/', label: 'Gallery', icon: Images, end: true },
-  { to: '/compare', label: 'Compare', icon: GitCompare },
-  { to: '/kit', label: 'My Kit', icon: Aperture },
-  { to: '/suggestions', label: 'Suggestions', icon: Lightbulb },
-];
+import { PRIMARY_NAV, FOOTER_NAV, type NavItemData } from './navItems';
 
 function NavItem({ to, label, icon: Icon, end }: NavItemData) {
   return (
@@ -35,25 +20,28 @@ function NavItem({ to, label, icon: Icon, end }: NavItemData) {
   );
 }
 
+// Desktop navigation. Hidden on mobile, where BottomNav takes over.
 export function Sidebar() {
   const { isAdmin } = useAdminAccess();
+  const footer = FOOTER_NAV.filter((item) => !item.adminOnly || isAdmin);
 
   return (
-    <aside className="flex h-full w-52 shrink-0 flex-col border-r border-line">
+    <aside className="hidden h-full w-52 shrink-0 flex-col border-r border-line lg:flex">
       <div className="flex h-14 items-center border-b border-line px-4">
         <span className="text-lg font-bold tracking-tight">blur</span>
       </div>
 
       <nav className="flex flex-col py-2">
-        {NAV.map((item) => (
+        {PRIMARY_NAV.map((item) => (
           <NavItem key={item.to} {...item} />
         ))}
       </nav>
 
       {/* Footer: Admin (admins only) above Settings */}
       <nav className="mt-auto flex flex-col border-t border-line py-2">
-        {isAdmin && <NavItem to="/admin" label="Admin" icon={Shield} />}
-        <NavItem to="/settings" label="Settings" icon={Settings} />
+        {footer.map((item) => (
+          <NavItem key={item.to} {...item} />
+        ))}
       </nav>
     </aside>
   );

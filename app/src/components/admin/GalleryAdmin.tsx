@@ -21,6 +21,7 @@ import {
 import { suggestGalleryMetadata, type GalleryMetadataSuggestion } from '../../lib/galleryMetadata';
 import { FORMATS } from '../../lib/engine';
 import { cameraFormat, defaultFocal, lensesForCamera, maxApertureAtFocal, type Camera, type CatalogLens } from '../../lib/gear';
+import { DEFAULT_SUBJECT_DISTANCE_PRESET_ID, SUBJECT_DISTANCE_PRESETS } from '../../lib/subjectDistance';
 import { useCatalog } from '../../store/CatalogProvider';
 
 interface Props {
@@ -45,6 +46,7 @@ interface UploadFields {
   formatId: string;
   focal: string;
   aperture: string;
+  subjectPreset: string;
   tags: string[];
   status: GalleryStatus;
   notes: string;
@@ -61,6 +63,7 @@ const INITIAL_FIELDS: UploadFields = {
   formatId: 'ff',
   focal: '50',
   aperture: '1.8',
+  subjectPreset: '',
   tags: [],
   status: 'approved',
   notes: '',
@@ -183,6 +186,7 @@ export function GalleryAdmin({ accessToken, photos, loading, loaded, error, tags
       formatId: next.formatId,
       focal: formatNumber(next.focal),
       aperture: formatNumber(next.aperture),
+      subjectPreset: '',
       tags: suggestedTags(next, activeTags),
       status: 'approved',
       notes: '',
@@ -257,6 +261,7 @@ export function GalleryAdmin({ accessToken, photos, loading, loaded, error, tags
         lensCatalogId: editing.fields.lensCatalogId,
         focal: numberOrFallback(editing.fields.focal, 50),
         aperture: numberOrFallback(editing.fields.aperture, 1.8),
+        subjectPreset: editing.fields.subjectPreset,
         tags: editing.fields.tags,
         notes: editing.fields.notes,
       }, accessToken);
@@ -309,6 +314,7 @@ export function GalleryAdmin({ accessToken, photos, loading, loaded, error, tags
     form.set('formatId', normalizedFormatId(fields.formatId));
     form.set('focal', fields.focal);
     form.set('aperture', fields.aperture);
+    form.set('subjectPreset', fields.subjectPreset);
     form.set('tags', fields.tags.join(','));
     form.set('status', fields.status);
     form.set('width', String(image.width));
@@ -463,6 +469,12 @@ export function GalleryAdmin({ accessToken, photos, loading, loaded, error, tags
               marker={focalFromExif ? 'EXIF' : undefined}
             />
             <Field className="lg:col-span-1" label="Aperture" value={fields.aperture} onChange={(value) => setField('aperture', value)} />
+            <SubjectPresetField
+              className="lg:col-span-2"
+              value={fields.subjectPreset}
+              onChange={(value) => setField('subjectPreset', value)}
+              required
+            />
             <ReadOnlyField className="lg:col-span-2" label="Camera ID" value={fields.cameraCatalogId} />
             <ReadOnlyField className="lg:col-span-2" label="Lens ID" value={fields.lensCatalogId} />
             <div className="lg:col-span-4">
@@ -471,7 +483,7 @@ export function GalleryAdmin({ accessToken, photos, loading, loaded, error, tags
             </div>
 
             <div className="flex flex-wrap items-end gap-2 lg:col-span-2">
-              <Button variant="solid" disabled={uploading || !!processing || readingExif || !file || !fields.title}>
+              <Button variant="solid" disabled={uploading || !!processing || readingExif || !file || !fields.title || !fields.subjectPreset}>
                 <Send size={14} strokeWidth={1.5} />
                 {processing ? 'Processing' : 'Send to Cloudflare'}
               </Button>
@@ -519,6 +531,12 @@ export function GalleryAdmin({ accessToken, photos, loading, loaded, error, tags
             <FormatField className="lg:col-span-1" value={editing.fields.formatId} onChange={(value) => setEditField('formatId', value)} />
             <Field className="lg:col-span-1" label="Focal length" value={editing.fields.focal} onChange={(value) => setEditField('focal', value)} />
             <Field className="lg:col-span-1" label="Aperture" value={editing.fields.aperture} onChange={(value) => setEditField('aperture', value)} />
+            <SubjectPresetField
+              className="lg:col-span-2"
+              value={editing.fields.subjectPreset}
+              onChange={(value) => setEditField('subjectPreset', value)}
+              required
+            />
             <ReadOnlyField className="lg:col-span-2" label="Camera ID" value={editing.fields.cameraCatalogId} />
             <ReadOnlyField className="lg:col-span-2" label="Lens ID" value={editing.fields.lensCatalogId} />
             <div className="lg:col-span-4">
@@ -661,6 +679,7 @@ function fieldsFromPhoto(photo: AdminGalleryPhoto): UploadFields {
     formatId: normalizedFormatId(photo.formatId),
     focal: String(photo.focal),
     aperture: String(photo.aperture),
+    subjectPreset: photo.subjectPreset ?? DEFAULT_SUBJECT_DISTANCE_PRESET_ID,
     tags: photo.tags,
     status: photo.status,
     notes: photo.notes ?? '',
@@ -893,6 +912,37 @@ function FormatField({
         {FORMATS.map((format) => (
           <option key={format.id} value={format.id}>
             {format.name}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function SubjectPresetField({
+  value,
+  onChange,
+  required,
+  className = '',
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  required?: boolean;
+  className?: string;
+}) {
+  return (
+    <label className={`block ${className}`}>
+      <span className="label mb-1 block">Focus distance approximation</span>
+      <select
+        required={required}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="w-full border border-line bg-transparent px-2 py-1.5 text-xs outline-none focus:border-line-strong"
+      >
+        <option value="">Select framing...</option>
+        {SUBJECT_DISTANCE_PRESETS.map((preset) => (
+          <option key={preset.id} value={preset.id}>
+            {preset.label}
           </option>
         ))}
       </select>
