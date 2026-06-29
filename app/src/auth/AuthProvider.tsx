@@ -1,10 +1,7 @@
 import { Auth0Provider, type AppState } from '@auth0/auth0-react';
 import type { ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
-
-const domain = import.meta.env.VITE_AUTH0_DOMAIN ?? 'your-tenant.auth0.com';
-const clientId = import.meta.env.VITE_AUTH0_CLIENT_ID ?? 'your-auth0-spa-client-id';
-const audience = import.meta.env.VITE_AUTH0_AUDIENCE;
+import { AUTH0_AUDIENCE, AUTH0_BASE_SCOPE, AUTH0_CLIENT_ID, AUTH0_DOMAIN } from './config';
 
 export function AppAuthProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
@@ -15,11 +12,12 @@ export function AppAuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <Auth0Provider
-      domain={domain}
-      clientId={clientId}
+      domain={AUTH0_DOMAIN}
+      clientId={AUTH0_CLIENT_ID}
       authorizationParams={{
         redirect_uri: window.location.origin,
-        ...(audience ? { audience } : {}),
+        audience: AUTH0_AUDIENCE,
+        scope: AUTH0_BASE_SCOPE,
       }}
       onRedirectCallback={onRedirectCallback}
     >
