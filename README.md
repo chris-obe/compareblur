@@ -38,7 +38,7 @@ From the repository root (recommended with [Bun](https://bun.sh)):
 
 ```bash
 bun run setup    # install app dependencies
-bun run dev      # http://localhost:5173 (or $CONDUCTOR_PORT in Conductor)
+bun run dev      # http://localhost:5174 (pinned; strictPort)
 bun run build    # type-check + production bundle (npm ci for Cloudflare Pages)
 ```
 
@@ -47,7 +47,7 @@ Or from `app/` directly:
 ```bash
 cd app
 bun install
-bun run dev      # http://localhost:5173
+bun run dev      # http://localhost:5174
 bun run build    # type-check + production bundle
 ```
 

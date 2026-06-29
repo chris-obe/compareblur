@@ -197,7 +197,9 @@ export default defineConfig({
     },
   },
   server: {
-    port: Number(process.env.CONDUCTOR_PORT) || 5174,
+    // Pinned: the app always binds 5174 (Conductor's run script targets it too).
+    // strictPort means an occupied 5174 errors loudly instead of drifting.
+    port: 5174,
     strictPort: true,
     host: true,
     fs: { allow: ['..'] }, // allow serving the sibling /engine dir
