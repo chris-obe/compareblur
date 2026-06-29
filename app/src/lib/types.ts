@@ -1,5 +1,6 @@
 // App-level data shapes (engine optical types come from lib/engine.ts).
 import type { Format } from './engine';
+import type { ReactionCounts } from './reactions';
 
 export type LensType = 'prime' | 'zoom';
 
@@ -46,6 +47,7 @@ export interface GalleryItem {
   focal: number; // mm (actual on the format)
   aperture: number; // f-number
   tags: string[];
+  reactionCounts?: ReactionCounts;
 }
 
 export interface ExtractedExif {

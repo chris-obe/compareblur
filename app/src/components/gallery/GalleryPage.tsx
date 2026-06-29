@@ -6,6 +6,7 @@ import { listGalleryPhotos } from '../../lib/galleryApi';
 import { resolveGalleryFormat } from '../../lib/galleryFormat';
 import { suggestGalleryMetadata } from '../../lib/galleryMetadata';
 import { useCatalog } from '../../store/CatalogProvider';
+import { useReactions } from '../../store/ReactionsProvider';
 import { FilterBar } from './FilterBar';
 import { UploadBox } from './UploadBox';
 import { GalleryGrid } from './GalleryGrid';
@@ -34,6 +35,7 @@ interface View {
 
 export function GalleryPage() {
   const { cameras, lenses } = useCatalog();
+  const { registerCounts } = useReactions();
   const [formats, setFormats] = useState<Set<CategoryId>>(new Set());
   const [tags, setTags] = useState<string[]>([]);
   const [view, setView] = useState<View | null>(null);
@@ -60,18 +62,21 @@ export function GalleryPage() {
         if (cancelled) return;
         if (photos.length > 0) {
           setItems(photos);
+          registerCounts(photos);
         } else {
           setItems(GALLERY_SEED);
+          registerCounts(GALLERY_SEED);
         }
       })
       .catch(() => {
         if (cancelled) return;
         setItems(GALLERY_SEED);
+        registerCounts(GALLERY_SEED);
       });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [registerCounts]);
 
   const filtered = useMemo(() => {
     return items.filter((item) => {

@@ -117,6 +117,17 @@ function adminIdentityProxy(): Plugin {
           },
         }));
       });
+
+      server.middlewares.use('/api/admin/users', (req: IncomingMessage, res: ServerResponse) => {
+        if (localAdminAuthRequired()) {
+          proxyRequest(req, res, adminPagesOrigin, `/api/admin/users${req.url ?? ''}`);
+          return;
+        }
+
+        res.statusCode = 501;
+        res.setHeader('content-type', 'application/json');
+        res.end(JSON.stringify({ error: 'Auth0 user lookup requires VITE_ADMIN_REQUIRE_AUTH=true in local dev' }));
+      });
     },
   };
 }

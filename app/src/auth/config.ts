@@ -14,3 +14,8 @@ export const adminTokenParams = {
   audience: AUTH0_AUDIENCE,
   scope: ADMIN_API_SCOPE,
 };
+
+export const userTokenParams = {
+  audience: AUTH0_AUDIENCE,
+  scope: AUTH0_BASE_SCOPE,
+};

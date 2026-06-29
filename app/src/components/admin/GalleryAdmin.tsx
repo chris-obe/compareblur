@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, ImagePlus, Pencil, RotateCcw, Save, Send, Trash2, Upload, X } from 'lucide-react';
 import { Button } from '../ui/Button';
+import { FreeTextComboBox, type FreeTextOption } from '../ui/FreeTextComboBox';
+import { TagPicker } from '../ui/TagPicker';
 import {
   deleteAdminGalleryPhoto,
   updateAdminGalleryPhoto,
   uploadAdminGalleryPhoto,
   type AdminGalleryPhoto,
+  type GalleryTag,
   type GalleryStatus,
 } from '../../lib/galleryApi';
 import {
@@ -17,6 +20,7 @@ import {
 } from '../../lib/imageProcessing';
 import { suggestGalleryMetadata, type GalleryMetadataSuggestion } from '../../lib/galleryMetadata';
 import { FORMATS } from '../../lib/engine';
+import { cameraFormat, defaultFocal, lensesForCamera, maxApertureAtFocal, type Camera, type CatalogLens } from '../../lib/gear';
 import { useCatalog } from '../../store/CatalogProvider';
 
 interface Props {
@@ -25,7 +29,9 @@ interface Props {
   loading: boolean;
   loaded: boolean;
   error?: string | null;
+  tags: GalleryTag[];
   onReload: () => Promise<void>;
+  onCreateTag: (label: string) => Promise<GalleryTag>;
   onError: (message: string) => void;
 }
 
@@ -39,7 +45,7 @@ interface UploadFields {
   formatId: string;
   focal: string;
   aperture: string;
-  tags: string;
+  tags: string[];
   status: GalleryStatus;
   notes: string;
 }
@@ -55,12 +61,12 @@ const INITIAL_FIELDS: UploadFields = {
   formatId: 'ff',
   focal: '50',
   aperture: '1.8',
-  tags: '',
+  tags: [],
   status: 'approved',
   notes: '',
 };
 
-export function GalleryAdmin({ accessToken, photos, loading, loaded, error, onReload, onError }: Props) {
+export function GalleryAdmin({ accessToken, photos, loading, loaded, error, tags, onReload, onCreateTag, onError }: Props) {
   const { cameras, lenses } = useCatalog();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -74,6 +80,7 @@ export function GalleryAdmin({ accessToken, photos, loading, loaded, error, onRe
   const [editing, setEditing] = useState<{ id: string; fields: UploadFields } | null>(null);
   const [processing, setProcessing] = useState<ImageProcessingProgress | null>(null);
   const [processedImage, setProcessedImage] = useState<ProcessedImage | null>(null);
+  const [focalFromExif, setFocalFromExif] = useState(false);
 
   useEffect(() => {
     return () => {
@@ -97,8 +104,31 @@ export function GalleryAdmin({ accessToken, photos, loading, loaded, error, onRe
     );
   }, [photos]);
 
-  const setField = (name: keyof UploadFields, value: string) => {
+  const activeTags = useMemo(() => tags.filter((tag) => !tag.archived), [tags]);
+  const cameraOptions = useMemo<FreeTextOption[]>(
+    () => cameras.map((camera) => ({ id: camera.id, label: camera.name, maker: camera.maker, detail: camera.formatId })),
+    [cameras],
+  );
+  const selectedCamera = useMemo(
+    () => cameras.find((camera) => camera.id === fields.cameraCatalogId),
+    [cameras, fields.cameraCatalogId],
+  );
+  const lensOptions = useMemo<FreeTextOption[]>(() => {
+    const available = selectedCamera ? lensesForCamera(selectedCamera, lenses) : lenses;
+    return available.map((lens) => ({
+      id: lens.id,
+      label: lens.name,
+      maker: lens.maker,
+      detail: lens.type === 'zoom' ? `${lens.focalMin}-${lens.focalMax}mm` : `${lens.focalMin}mm`,
+    }));
+  }, [lenses, selectedCamera]);
+
+  const setField = <K extends keyof UploadFields>(name: K, value: UploadFields[K]) => {
     setFields((current) => ({ ...current, [name]: value }));
+  };
+
+  const setTagsField = (value: string[]) => {
+    setFields((current) => ({ ...current, tags: value }));
   };
 
   const chooseFile = async (nextFile: File | null) => {
@@ -112,23 +142,15 @@ export function GalleryAdmin({ accessToken, photos, loading, loaded, error, onRe
     setProcessedImage(null);
     setProcessing(null);
 
+    await extractExifFromFile(nextFile);
+  };
+
+  const extractExifFromFile = async (sourceFile = file) => {
+    if (!sourceFile) return;
+    setReadingExif(true);
     try {
-      const next = await suggestGalleryMetadata(nextFile, cameras, lenses);
-      setSuggestion(next);
-      setFields({
-        title: next.title,
-        author: '',
-        camera: next.camera,
-        cameraCatalogId: next.cameraCatalogId ?? '',
-        lens: next.lens,
-        lensCatalogId: next.lensCatalogId ?? '',
-        formatId: next.formatId,
-        focal: String(Math.round(next.focal * 10) / 10),
-        aperture: String(Math.round(next.aperture * 10) / 10),
-        tags: suggestedTags(next).join(', '),
-        status: 'approved',
-        notes: '',
-      });
+      const next = await suggestGalleryMetadata(sourceFile, cameras, lenses);
+      applySuggestion(next);
     } catch (err) {
       onError(err instanceof Error ? err.message : 'Could not read image metadata');
     } finally {
@@ -143,8 +165,59 @@ export function GalleryAdmin({ accessToken, photos, loading, loaded, error, onRe
     setSuggestion(null);
     setProcessedImage(null);
     setProcessing(null);
+    setFocalFromExif(false);
     setFields(INITIAL_FIELDS);
     if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const applySuggestion = (next: GalleryMetadataSuggestion) => {
+    setSuggestion(next);
+    setFocalFromExif(next.source.exif.focal != null || next.source.exif.focal35 != null);
+    setFields({
+      title: next.title,
+      author: '',
+      camera: next.camera,
+      cameraCatalogId: next.cameraCatalogId ?? '',
+      lens: next.lens,
+      lensCatalogId: next.lensCatalogId ?? '',
+      formatId: next.formatId,
+      focal: formatNumber(next.focal),
+      aperture: formatNumber(next.aperture),
+      tags: suggestedTags(next, activeTags),
+      status: 'approved',
+      notes: '',
+    });
+  };
+
+  const selectCamera = (camera: Camera) => {
+    setFields((current) => {
+      const compatible = current.lensCatalogId
+        ? lensesForCamera(camera, lenses).some((lens) => lens.id === current.lensCatalogId)
+        : true;
+      return {
+        ...current,
+        camera: camera.name,
+        cameraCatalogId: camera.id,
+        formatId: cameraFormat(camera).id,
+        lens: compatible ? current.lens : '',
+        lensCatalogId: compatible ? current.lensCatalogId : '',
+      };
+    });
+  };
+
+  const selectLens = (lens: CatalogLens) => {
+    const exifFocal = suggestion?.source.exif.focal ?? suggestion?.source.exif.focal35;
+    const focal = exifFocal != null && exifFocal >= lens.focalMin && exifFocal <= lens.focalMax
+      ? exifFocal
+      : defaultFocal(lens);
+    setFocalFromExif(exifFocal === focal);
+    setFields((current) => ({
+      ...current,
+      lens: lens.name,
+      lensCatalogId: lens.id,
+      focal: formatNumber(focal),
+      aperture: current.aperture || formatNumber(maxApertureAtFocal(lens, focal)),
+    }));
   };
 
   const updateStatus = async (photo: AdminGalleryPhoto, next: GalleryStatus) => {
@@ -163,7 +236,7 @@ export function GalleryAdmin({ accessToken, photos, loading, loaded, error, onRe
     setEditing({ id: photo.id, fields: fieldsFromPhoto(photo) });
   };
 
-  const setEditField = (name: keyof UploadFields, value: string) => {
+  const setEditField = <K extends keyof UploadFields>(name: K, value: UploadFields[K]) => {
     setEditing((current) => current ? { ...current, fields: { ...current.fields, [name]: value } } : current);
   };
 
@@ -184,7 +257,7 @@ export function GalleryAdmin({ accessToken, photos, loading, loaded, error, onRe
         lensCatalogId: editing.fields.lensCatalogId,
         focal: numberOrFallback(editing.fields.focal, 50),
         aperture: numberOrFallback(editing.fields.aperture, 1.8),
-        tags: normalizeTagList(editing.fields.tags),
+        tags: editing.fields.tags,
         notes: editing.fields.notes,
       }, accessToken);
       setEditing(null);
@@ -236,7 +309,7 @@ export function GalleryAdmin({ accessToken, photos, loading, loaded, error, onRe
     form.set('formatId', normalizedFormatId(fields.formatId));
     form.set('focal', fields.focal);
     form.set('aperture', fields.aperture);
-    form.set('tags', fields.tags);
+    form.set('tags', fields.tags.join(','));
     form.set('status', fields.status);
     form.set('width', String(image.width));
     form.set('height', String(image.height));
@@ -319,6 +392,12 @@ export function GalleryAdmin({ accessToken, photos, loading, loaded, error, onRe
               <div className="mt-1 text-muted">
                 Upload target: {GALLERY_UPLOAD_MAX_LONG_EDGE}px long edge, {formatBytes(GALLERY_UPLOAD_MAX_BYTES)} max
               </div>
+              <div className="mt-2">
+                <Button type="button" onClick={() => void extractExifFromFile()} disabled={!file || readingExif || uploading}>
+                  <RotateCcw size={13} strokeWidth={1.5} />
+                  Extract EXIF
+                </Button>
+              </div>
               {processedImage && (
                 <div className="mt-1 text-muted">
                   Processed: {processedImage.width}×{processedImage.height}, {formatBytes(processedImage.processedBytes)}
@@ -348,12 +427,48 @@ export function GalleryAdmin({ accessToken, photos, loading, loaded, error, onRe
               onChange={(value) => setField('status', value)}
               options={STATUS_ORDER}
             />
-            <Field className="lg:col-span-2" label="Camera" value={fields.camera} onChange={(value) => setField('camera', value)} />
-            <Field className="lg:col-span-2" label="Lens" value={fields.lens} onChange={(value) => setField('lens', value)} />
+            <CatalogField
+              className="lg:col-span-2"
+              label="Camera"
+              value={fields.camera}
+              selectedId={fields.cameraCatalogId}
+              options={cameraOptions}
+              onTextChange={(value) => setFields((current) => ({ ...current, camera: value, cameraCatalogId: '' }))}
+              onSelect={(option) => {
+                const camera = cameras.find((item) => item.id === option.id);
+                if (camera) selectCamera(camera);
+              }}
+            />
+            <CatalogField
+              className="lg:col-span-2"
+              label={selectedCamera ? `Lens (${lensOptions.length} compatible)` : 'Lens'}
+              value={fields.lens}
+              selectedId={fields.lensCatalogId}
+              options={lensOptions}
+              onTextChange={(value) => setFields((current) => ({ ...current, lens: value, lensCatalogId: '' }))}
+              onSelect={(option) => {
+                const lens = lenses.find((item) => item.id === option.id);
+                if (lens) selectLens(lens);
+              }}
+            />
             <FormatField className="lg:col-span-1" value={fields.formatId} onChange={(value) => setField('formatId', value)} />
-            <Field className="lg:col-span-1" label="Focal" value={fields.focal} onChange={(value) => setField('focal', value)} />
+            <Field
+              className="lg:col-span-1"
+              label="Focal length"
+              value={fields.focal}
+              onChange={(value) => {
+                setFocalFromExif(false);
+                setField('focal', value);
+              }}
+              marker={focalFromExif ? 'EXIF' : undefined}
+            />
             <Field className="lg:col-span-1" label="Aperture" value={fields.aperture} onChange={(value) => setField('aperture', value)} />
-            <Field className="lg:col-span-3" label="Tags" value={fields.tags} onChange={(value) => setField('tags', value)} placeholder="portrait, bokeh" />
+            <ReadOnlyField className="lg:col-span-2" label="Camera ID" value={fields.cameraCatalogId} />
+            <ReadOnlyField className="lg:col-span-2" label="Lens ID" value={fields.lensCatalogId} />
+            <div className="lg:col-span-4">
+              <span className="label mb-1 block">Tags</span>
+              <TagPicker tags={activeTags} value={fields.tags} onChange={setTagsField} onCreateTag={onCreateTag} />
+            </div>
 
             <div className="flex flex-wrap items-end gap-2 lg:col-span-2">
               <Button variant="solid" disabled={uploading || !!processing || readingExif || !file || !fields.title}>
@@ -395,14 +510,26 @@ export function GalleryAdmin({ accessToken, photos, loading, loaded, error, onRe
               onChange={(value) => setEditField('status', value)}
               options={STATUS_ORDER}
             />
-            <Field className="lg:col-span-2" label="Camera" value={editing.fields.camera} onChange={(value) => setEditField('camera', value)} />
-            <Field className="lg:col-span-2" label="Camera catalog ID" value={editing.fields.cameraCatalogId} onChange={(value) => setEditField('cameraCatalogId', value)} />
-            <Field className="lg:col-span-2" label="Lens" value={editing.fields.lens} onChange={(value) => setEditField('lens', value)} />
-            <Field className="lg:col-span-2" label="Lens catalog ID" value={editing.fields.lensCatalogId} onChange={(value) => setEditField('lensCatalogId', value)} />
+            <EditCatalogFields
+              cameras={cameras}
+              lenses={lenses}
+              fields={editing.fields}
+              setFields={(next) => setEditing((current) => current ? { ...current, fields: next } : current)}
+            />
             <FormatField className="lg:col-span-1" value={editing.fields.formatId} onChange={(value) => setEditField('formatId', value)} />
-            <Field className="lg:col-span-1" label="Focal" value={editing.fields.focal} onChange={(value) => setEditField('focal', value)} />
+            <Field className="lg:col-span-1" label="Focal length" value={editing.fields.focal} onChange={(value) => setEditField('focal', value)} />
             <Field className="lg:col-span-1" label="Aperture" value={editing.fields.aperture} onChange={(value) => setEditField('aperture', value)} />
-            <Field className="lg:col-span-3" label="Tags" value={editing.fields.tags} onChange={(value) => setEditField('tags', value)} />
+            <ReadOnlyField className="lg:col-span-2" label="Camera ID" value={editing.fields.cameraCatalogId} />
+            <ReadOnlyField className="lg:col-span-2" label="Lens ID" value={editing.fields.lensCatalogId} />
+            <div className="lg:col-span-4">
+              <span className="label mb-1 block">Tags</span>
+              <TagPicker
+                tags={activeTags}
+                value={editing.fields.tags}
+                onChange={(value) => setEditField('tags', value)}
+                onCreateTag={onCreateTag}
+              />
+            </div>
             <Field className="lg:col-span-6" label="Notes" value={editing.fields.notes} onChange={(value) => setEditField('notes', value)} />
           </div>
         </form>
@@ -515,10 +642,11 @@ function AuthenticatedThumbnail({ photo, accessToken }: { photo: AdminGalleryPho
   return <img src={src} alt="" className="h-14 w-20 border border-line object-cover grayscale" />;
 }
 
-function suggestedTags(suggestion: GalleryMetadataSuggestion): string[] {
+function suggestedTags(suggestion: GalleryMetadataSuggestion, availableTags: GalleryTag[]): string[] {
   const tags = new Set<string>();
-  if (suggestion.cameraConfidence !== 'none') tags.add('catalog');
-  if (suggestion.source.exif.guessedFormat) tags.add('check format');
+  const available = new Set(availableTags.map((tag) => tag.label));
+  if (suggestion.cameraConfidence !== 'none' && available.has('catalog')) tags.add('catalog');
+  if (suggestion.source.exif.guessedFormat && available.has('check format')) tags.add('check format');
   return [...tags];
 }
 
@@ -533,22 +661,19 @@ function fieldsFromPhoto(photo: AdminGalleryPhoto): UploadFields {
     formatId: normalizedFormatId(photo.formatId),
     focal: String(photo.focal),
     aperture: String(photo.aperture),
-    tags: photo.tags.join(', '),
+    tags: photo.tags,
     status: photo.status,
     notes: photo.notes ?? '',
   };
 }
 
-function normalizeTagList(value: string): string[] {
-  return value
-    .split(',')
-    .map((tag) => tag.trim().toLowerCase())
-    .filter(Boolean);
-}
-
 function numberOrFallback(value: string, fallback: number): number {
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
+}
+
+function formatNumber(value: number): string {
+  return String(Math.round(value * 10) / 10);
 }
 
 function normalizedFormatId(value: string): string {
@@ -572,6 +697,7 @@ function Field({
   onChange,
   required,
   placeholder,
+  marker,
   className = '',
 }: {
   label: string;
@@ -579,11 +705,15 @@ function Field({
   onChange: (value: string) => void;
   required?: boolean;
   placeholder?: string;
+  marker?: string;
   className?: string;
 }) {
   return (
     <label className={`block ${className}`}>
-      <span className="label mb-1 block">{label}</span>
+      <span className="label mb-1 flex items-center gap-2">
+        {label}
+        {marker && <span className="inline-flex border border-line px-1.5 py-0.5 text-[10px] text-muted">{marker}</span>}
+      </span>
       <input
         required={required}
         placeholder={placeholder}
@@ -592,6 +722,121 @@ function Field({
         className="w-full border border-line bg-transparent px-2 py-1.5 text-xs outline-none focus:border-line-strong"
       />
     </label>
+  );
+}
+
+function ReadOnlyField({ label, value, className = '' }: { label: string; value?: string; className?: string }) {
+  return (
+    <label className={`block ${className}`}>
+      <span className="label mb-1 block">{label}</span>
+      <input
+        readOnly
+        value={value || 'No catalog match'}
+        className="w-full cursor-not-allowed border border-line bg-faint px-2 py-1.5 text-xs text-muted outline-none"
+      />
+    </label>
+  );
+}
+
+function CatalogField({
+  label,
+  value,
+  selectedId,
+  options,
+  onTextChange,
+  onSelect,
+  className = '',
+}: {
+  label: string;
+  value: string;
+  selectedId: string;
+  options: FreeTextOption[];
+  onTextChange: (value: string) => void;
+  onSelect: (option: FreeTextOption) => void;
+  className?: string;
+}) {
+  return (
+    <label className={`block ${className}`}>
+      <span className="label mb-1 block">{label}</span>
+      <FreeTextComboBox
+        options={options}
+        value={value}
+        selectedId={selectedId}
+        onTextChange={onTextChange}
+        onSelect={onSelect}
+        searchPlaceholder="Search catalog or type free text…"
+      />
+    </label>
+  );
+}
+
+function EditCatalogFields({
+  cameras,
+  lenses,
+  fields,
+  setFields,
+}: {
+  cameras: Camera[];
+  lenses: CatalogLens[];
+  fields: UploadFields;
+  setFields: (fields: UploadFields) => void;
+}) {
+  const camera = cameras.find((item) => item.id === fields.cameraCatalogId);
+  const cameraOptions = cameras.map((item) => ({ id: item.id, label: item.name, maker: item.maker, detail: item.formatId }));
+  const availableLenses = camera ? lensesForCamera(camera, lenses) : lenses;
+  const lensOptions = availableLenses.map((lens) => ({
+    id: lens.id,
+    label: lens.name,
+    maker: lens.maker,
+    detail: lens.type === 'zoom' ? `${lens.focalMin}-${lens.focalMax}mm` : `${lens.focalMin}mm`,
+  }));
+
+  return (
+    <>
+      <CatalogField
+        className="lg:col-span-2"
+        label="Camera"
+        value={fields.camera}
+        selectedId={fields.cameraCatalogId}
+        options={cameraOptions}
+        onTextChange={(value) => setFields({ ...fields, camera: value, cameraCatalogId: '' })}
+        onSelect={(option) => {
+          const nextCamera = cameras.find((item) => item.id === option.id);
+          if (!nextCamera) return;
+          const compatible = fields.lensCatalogId
+            ? lensesForCamera(nextCamera, lenses).some((lens) => lens.id === fields.lensCatalogId)
+            : true;
+          setFields({
+            ...fields,
+            camera: nextCamera.name,
+            cameraCatalogId: nextCamera.id,
+            formatId: cameraFormat(nextCamera).id,
+            lens: compatible ? fields.lens : '',
+            lensCatalogId: compatible ? fields.lensCatalogId : '',
+          });
+        }}
+      />
+      <CatalogField
+        className="lg:col-span-2"
+        label={camera ? `Lens (${lensOptions.length} compatible)` : 'Lens'}
+        value={fields.lens}
+        selectedId={fields.lensCatalogId}
+        options={lensOptions}
+        onTextChange={(value) => setFields({ ...fields, lens: value, lensCatalogId: '' })}
+        onSelect={(option) => {
+          const lens = lenses.find((item) => item.id === option.id);
+          if (!lens) return;
+          const focal = defaultFocal(lens);
+          setFields({
+            ...fields,
+            lens: lens.name,
+            lensCatalogId: lens.id,
+            focal: formatNumber(focal),
+            aperture: fields.aperture || formatNumber(maxApertureAtFocal(lens, focal)),
+          });
+        }}
+      />
+    </>
   );
 }
 

@@ -5,9 +5,12 @@ import {
   Database,
   HardDrive,
   ImagePlus,
+  Plus,
   RefreshCw,
   Shield,
   SlidersHorizontal,
+  Tags,
+  ThumbsUp,
   UserCog,
 } from 'lucide-react';
 import { Button } from '../components/ui/Button';
@@ -26,11 +29,21 @@ import {
   type AdminUsersResponse,
   type CatalogAdminStatus,
 } from '../lib/adminApi';
-import { listAdminGalleryPhotos, type AdminGalleryPhoto } from '../lib/galleryApi';
+import {
+  archiveAdminGalleryTag,
+  createAdminGalleryTag,
+  getAdminGalleryReactionStats,
+  listAdminGalleryPhotos,
+  listAdminGalleryTags,
+  updateAdminGalleryTag,
+  type AdminGalleryReactionStats,
+  type AdminGalleryPhoto,
+  type GalleryTag,
+} from '../lib/galleryApi';
 import { useCatalog } from '../store/CatalogProvider';
 import { GalleryAdmin } from '../components/admin/GalleryAdmin';
 
-type AdminSection = 'overview' | 'catalog' | 'gallery' | 'users' | 'storage';
+type AdminSection = 'overview' | 'catalog' | 'gallery' | 'reactions' | 'users' | 'storage' | 'settings';
 
 interface AdminGateProps {
   children: React.ReactNode;
@@ -40,8 +53,10 @@ const SECTIONS: Array<{ id: AdminSection; label: string }> = [
   { id: 'overview', label: 'Overview' },
   { id: 'catalog', label: 'Catalog' },
   { id: 'gallery', label: 'Gallery' },
+  { id: 'reactions', label: 'Reactions' },
   { id: 'users', label: 'Users' },
   { id: 'storage', label: 'Storage' },
+  { id: 'settings', label: 'Settings' },
 ];
 
 function formatDate(value?: string | null): string {
@@ -149,6 +164,12 @@ function AdminConsole() {
   const [galleryLoading, setGalleryLoading] = useState(false);
   const [galleryLoaded, setGalleryLoaded] = useState(false);
   const [galleryError, setGalleryError] = useState<string | null>(null);
+  const [galleryTags, setGalleryTags] = useState<GalleryTag[]>([]);
+  const [galleryTagsLoading, setGalleryTagsLoading] = useState(false);
+  const [galleryTagsError, setGalleryTagsError] = useState<string | null>(null);
+  const [reactionStats, setReactionStats] = useState<AdminGalleryReactionStats | null>(null);
+  const [reactionStatsLoading, setReactionStatsLoading] = useState(false);
+  const [reactionStatsError, setReactionStatsError] = useState<string | null>(null);
   const [usersResponse, setUsersResponse] = useState<AdminUsersResponse | null>(null);
   const [usersLoading, setUsersLoading] = useState(false);
   const [usersQuery, setUsersQuery] = useState('');
@@ -217,6 +238,55 @@ function AdminConsole() {
     }
   };
 
+  const loadGalleryTags = async () => {
+    setGalleryTagsLoading(true);
+    setGalleryTagsError(null);
+    try {
+      const token = await getToken();
+      setGalleryTags(await listAdminGalleryTags(token));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Gallery tags API failed';
+      setGalleryTagsError(message);
+      setError(message);
+    } finally {
+      setGalleryTagsLoading(false);
+    }
+  };
+
+  const createGalleryTag = async (label: string) => {
+    const token = await getToken();
+    const tag = await createAdminGalleryTag(label, token);
+    await loadGalleryTags();
+    return tag;
+  };
+
+  const updateGalleryTag = async (slug: string, updates: Partial<Pick<GalleryTag, 'label' | 'archived'>>) => {
+    const token = await getToken();
+    await updateAdminGalleryTag(slug, updates, token);
+    await loadGalleryTags();
+  };
+
+  const archiveGalleryTag = async (slug: string) => {
+    const token = await getToken();
+    await archiveAdminGalleryTag(slug, token);
+    await loadGalleryTags();
+  };
+
+  const loadReactionStats = async () => {
+    setReactionStatsLoading(true);
+    setReactionStatsError(null);
+    try {
+      const token = await getToken();
+      setReactionStats(await getAdminGalleryReactionStats(token));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Reaction analytics API failed';
+      setReactionStatsError(message);
+      setError(message);
+    } finally {
+      setReactionStatsLoading(false);
+    }
+  };
+
   const loadUsers = async (query = usersQuery) => {
     if (devBypass && !isAuthenticated) {
       setUsersError('Sign in with Auth0 to inspect registered users.');
@@ -242,6 +312,8 @@ function AdminConsole() {
     void loadIdentity();
     void loadStatus();
     void loadGallery();
+    void loadGalleryTags();
+    void loadReactionStats();
     if (isAuthenticated) void loadUsers('');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated]);
@@ -264,12 +336,17 @@ function AdminConsole() {
         detail: galleryError ?? `${galleryPhotos.filter((photo) => photo.status === 'pending').length} pending approval`,
       },
       {
+        label: 'Reactions',
+        value: reactionStats ? `${reactionStats.totals.total} total` : reactionStatsLoading ? 'Loading' : 'Unavailable',
+        detail: reactionStatsError ?? `${reactionStats?.totals.reactingUsers ?? 0} reacting users`,
+      },
+      {
         label: 'Storage',
         value: status?.export?.size ? formatBytes(status.export.size) : 'Unavailable',
         detail: status?.export?.key ?? 'R2 media and catalog objects',
       },
     ],
-    [catalog.source, catalog.status, galleryError, galleryLoaded, galleryPhotos, status, usersError, usersLoading, usersResponse],
+    [catalog.source, catalog.status, galleryError, galleryLoaded, galleryPhotos, reactionStats, reactionStatsError, reactionStatsLoading, status, usersError, usersLoading, usersResponse],
   );
 
   // Master refresh: reload every section's data at once.
@@ -278,6 +355,8 @@ function AdminConsole() {
       loadIdentity(),
       loadStatus(),
       loadGallery(),
+      loadGalleryTags(),
+      loadReactionStats(),
       isAuthenticated ? loadUsers(usersQuery) : Promise.resolve(),
     ]);
   };
@@ -405,11 +484,21 @@ function AdminConsole() {
             <GalleryModerationSection
               accessToken={adminToken}
               photos={galleryPhotos}
+              tags={galleryTags}
               loading={galleryLoading}
               loaded={galleryLoaded}
               error={galleryError}
               onReload={loadGallery}
+              onCreateTag={createGalleryTag}
               onError={setError}
+            />
+          )}
+          {section === 'reactions' && (
+            <ReactionsSection
+              stats={reactionStats}
+              loading={reactionStatsLoading}
+              error={reactionStatsError}
+              onReload={loadReactionStats}
             />
           )}
           {section === 'users' && (
@@ -423,6 +512,17 @@ function AdminConsole() {
             />
           )}
           {section === 'storage' && <StorageSection exportStatus={status?.export ?? null} />}
+          {section === 'settings' && (
+            <SettingsSection
+              tags={galleryTags}
+              loading={galleryTagsLoading}
+              error={galleryTagsError}
+              onReload={loadGalleryTags}
+              onCreate={createGalleryTag}
+              onUpdate={updateGalleryTag}
+              onArchive={archiveGalleryTag}
+            />
+          )}
         </section>
       </div>
     </div>
@@ -567,18 +667,22 @@ function CatalogSection({
 function GalleryModerationSection({
   accessToken,
   photos,
+  tags,
   loading,
   loaded,
   error,
   onReload,
+  onCreateTag,
   onError,
 }: {
   accessToken?: string;
   photos: AdminGalleryPhoto[];
+  tags: GalleryTag[];
   loading: boolean;
   loaded: boolean;
   error?: string | null;
   onReload: () => Promise<void>;
+  onCreateTag: (label: string) => Promise<GalleryTag>;
   onError: (message: string) => void;
 }) {
   return (
@@ -586,12 +690,278 @@ function GalleryModerationSection({
       <GalleryAdmin
         accessToken={accessToken}
         photos={photos}
+        tags={tags}
         loading={loading}
         loaded={loaded}
         error={error}
         onReload={onReload}
+        onCreateTag={onCreateTag}
         onError={onError}
       />
+    </Panel>
+  );
+}
+
+function ReactionsSection({
+  stats,
+  loading,
+  error,
+  onReload,
+}: {
+  stats: AdminGalleryReactionStats | null;
+  loading: boolean;
+  error?: string | null;
+  onReload: () => Promise<void>;
+}) {
+  return (
+    <div className="space-y-5">
+      <Panel title="Gallery reactions" icon={ThumbsUp}>
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div>
+            <div className="label mb-1">Taste signals</div>
+            <div className="text-sm text-muted">Signed-in user reactions are scoped by Auth0 user ID and aggregated per photo.</div>
+          </div>
+          <Button onClick={onReload} disabled={loading}>
+            <RefreshCw size={14} strokeWidth={1.5} />
+            {loading ? 'Loading' : 'Reload'}
+          </Button>
+        </div>
+
+        {error && (
+          <div className="mb-4 border border-line bg-faint p-3 text-xs">
+            <span className="inline-flex items-center gap-2">
+              <AlertTriangle size={14} strokeWidth={1.5} />
+              {error}
+            </span>
+          </div>
+        )}
+
+        <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+          <SmallStat label="Total" value={String(stats?.totals.total ?? 0)} detail="All stored reactions" />
+          <SmallStat label="Users" value={String(stats?.totals.reactingUsers ?? 0)} detail="Distinct Auth0 users" />
+          <SmallStat label="Not for me" value={String(stats?.totals.dislike ?? 0)} detail="Dislikes" />
+          <SmallStat label="Likes" value={String(stats?.totals.like ?? 0)} detail="Liked photos" />
+          <SmallStat label="Loves" value={String(stats?.totals.love ?? 0)} detail="Strongest taste signal" />
+        </div>
+
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(22rem,0.8fr)]">
+          <div className="overflow-x-auto border border-line">
+            <table className="w-full min-w-[46rem] text-left text-xs">
+              <thead className="border-b border-line bg-faint text-muted">
+                <tr>
+                  <th className="px-3 py-2 font-normal uppercase tracking-wide">Photo</th>
+                  <th className="px-3 py-2 font-normal uppercase tracking-wide">State</th>
+                  <th className="px-3 py-2 font-normal uppercase tracking-wide">Users</th>
+                  <th className="px-3 py-2 font-normal uppercase tracking-wide">Not for me</th>
+                  <th className="px-3 py-2 font-normal uppercase tracking-wide">Like</th>
+                  <th className="px-3 py-2 font-normal uppercase tracking-wide">Love</th>
+                  <th className="px-3 py-2 font-normal uppercase tracking-wide">Total</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-line">
+                {(stats?.byPhoto ?? []).map((row) => (
+                  <tr key={row.photoId}>
+                    <td className="px-3 py-2">
+                      <div className="font-bold">{row.title}</div>
+                      <div className="text-muted">{row.photoId}</div>
+                    </td>
+                    <td className="px-3 py-2">{row.status}</td>
+                    <td className="px-3 py-2">{row.reactingUsers}</td>
+                    <td className="px-3 py-2">{row.dislike}</td>
+                    <td className="px-3 py-2">{row.like}</td>
+                    <td className="px-3 py-2">{row.love}</td>
+                    <td className="px-3 py-2 font-bold">{row.total}</td>
+                  </tr>
+                ))}
+                {!stats && !loading && (
+                  <tr>
+                    <td colSpan={7} className="px-3 py-6 text-center text-muted">
+                      No reaction data loaded yet.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="border border-line">
+            <div className="border-b border-line bg-faint px-3 py-2 text-xs uppercase tracking-wide text-muted">
+              Recent user reactions
+            </div>
+            <div className="max-h-[32rem] divide-y divide-line overflow-auto">
+              {(stats?.recent ?? []).map((row) => (
+                <div key={`${row.photoId}-${row.userSub}-${row.updatedAt}`} className="p-3 text-xs">
+                  <div className="mb-1 flex items-center justify-between gap-3">
+                    <span className="font-bold">{row.reaction}</span>
+                    <span className="text-muted">{formatDate(row.updatedAt)}</span>
+                  </div>
+                  <div className="truncate">{row.title}</div>
+                  <div className="truncate text-muted">{row.userName ?? row.userEmail ?? row.userSub}</div>
+                </div>
+              ))}
+              {stats && stats.recent.length === 0 && (
+                <div className="p-3 text-xs text-muted">No reactions stored yet.</div>
+              )}
+            </div>
+          </div>
+        </div>
+      </Panel>
+    </div>
+  );
+}
+
+function SettingsSection({
+  tags,
+  loading,
+  error,
+  onReload,
+  onCreate,
+  onUpdate,
+  onArchive,
+}: {
+  tags: GalleryTag[];
+  loading: boolean;
+  error?: string | null;
+  onReload: () => Promise<void>;
+  onCreate: (label: string) => Promise<GalleryTag>;
+  onUpdate: (slug: string, updates: Partial<Pick<GalleryTag, 'label' | 'archived'>>) => Promise<void>;
+  onArchive: (slug: string) => Promise<void>;
+}) {
+  const [draft, setDraft] = useState('');
+  const [query, setQuery] = useState('');
+  const [busy, setBusy] = useState<string | null>(null);
+  const [edits, setEdits] = useState<Record<string, string>>({});
+  const filtered = tags.filter((tag) => {
+    const needle = query.trim().toLowerCase();
+    return !needle || tag.label.includes(needle) || tag.slug.includes(needle);
+  });
+
+  const create = async () => {
+    if (!draft.trim()) return;
+    setBusy('new');
+    try {
+      await onCreate(draft);
+      setDraft('');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const save = async (tag: GalleryTag) => {
+    const next = edits[tag.slug] ?? tag.label;
+    setBusy(tag.slug);
+    try {
+      await onUpdate(tag.slug, { label: next });
+      setEdits((current) => {
+        const copy = { ...current };
+        delete copy[tag.slug];
+        return copy;
+      });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <Panel title="Gallery tags" icon={Tags}>
+      <div className="space-y-4">
+        <div className="flex flex-col gap-3 md:flex-row md:items-end">
+          <label className="min-w-0 flex-1">
+            <span className="label mb-2 block">Search tags</span>
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="portrait, film, large format"
+              className="h-9 w-full border border-line bg-transparent px-3 text-sm outline-none focus:border-line-strong"
+            />
+          </label>
+          <label className="min-w-0 flex-1">
+            <span className="label mb-2 block">Add tag</span>
+            <input
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') void create();
+              }}
+              placeholder="new tag"
+              className="h-9 w-full border border-line bg-transparent px-3 text-sm outline-none focus:border-line-strong"
+            />
+          </label>
+          <Button onClick={create} disabled={!draft.trim() || busy === 'new'} className="h-9 shrink-0">
+            <Plus size={14} strokeWidth={1.5} />
+            Add tag
+          </Button>
+          <Button onClick={onReload} disabled={loading} className="h-9 shrink-0">
+            <RefreshCw size={14} strokeWidth={1.5} />
+            Reload
+          </Button>
+        </div>
+
+        {error && (
+          <div className="border border-line bg-faint p-3 text-xs">
+            <span className="inline-flex items-center gap-2">
+              <AlertTriangle size={14} strokeWidth={1.5} />
+              {error}
+            </span>
+          </div>
+        )}
+
+        <div className="overflow-x-auto border border-line">
+          <table className="w-full min-w-[42rem] text-left text-xs">
+            <thead className="border-b border-line bg-faint text-muted">
+              <tr>
+                <th className="px-3 py-2 font-normal uppercase tracking-wide">Label</th>
+                <th className="px-3 py-2 font-normal uppercase tracking-wide">Slug</th>
+                <th className="px-3 py-2 font-normal uppercase tracking-wide">State</th>
+                <th className="px-3 py-2 font-normal uppercase tracking-wide">Updated</th>
+                <th className="px-3 py-2 font-normal uppercase tracking-wide">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-line">
+              {filtered.map((tag) => {
+                const edit = edits[tag.slug] ?? tag.label;
+                return (
+                  <tr key={tag.slug}>
+                    <td className="px-3 py-2">
+                      <input
+                        value={edit}
+                        onChange={(event) => setEdits((current) => ({ ...current, [tag.slug]: event.target.value }))}
+                        className="w-full border border-line bg-transparent px-2 py-1.5 outline-none focus:border-line-strong"
+                      />
+                    </td>
+                    <td className="px-3 py-2 text-muted">{tag.slug}</td>
+                    <td className="px-3 py-2">{tag.archived ? 'Archived' : 'Active'}</td>
+                    <td className="px-3 py-2">{formatDate(tag.updatedAt)}</td>
+                    <td className="px-3 py-2">
+                      <div className="flex flex-wrap gap-2">
+                        <Button onClick={() => save(tag)} disabled={busy === tag.slug || !edit.trim() || edit === tag.label}>
+                          Save
+                        </Button>
+                        {tag.archived ? (
+                          <Button onClick={() => onUpdate(tag.slug, { archived: false })} disabled={busy === tag.slug}>
+                            Restore
+                          </Button>
+                        ) : (
+                          <Button onClick={() => onArchive(tag.slug)} disabled={busy === tag.slug}>
+                            Archive
+                          </Button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              {filtered.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="px-3 py-6 text-center text-muted">
+                    {loading ? 'Loading tags…' : 'No tags match this search.'}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </Panel>
   );
 }

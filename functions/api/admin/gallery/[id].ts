@@ -9,6 +9,7 @@ import {
 } from '../../../_lib/gallery';
 import { adminAuthError, requireAdmin } from '../../../_lib/admin';
 import { galleryFormatIdOrDefault } from '../../../_lib/formats';
+import { findMissingGalleryTags } from '../../../_lib/galleryTags';
 
 type Env = GalleryEnv & {
   AUTH0_AUDIENCE?: string;
@@ -32,6 +33,16 @@ export const onRequestPatch: PagesFunction<Env> = async ({ env, params, request 
   const formatId = formatIdValue(body.formatId, current.format_id);
   if (!formatId) return json({ error: 'invalid formatId' }, { status: 400 });
 
+  const tags = body.tags == null
+    ? parseTags(current.tags_json)
+    : Array.isArray(body.tags)
+      ? normalizeTags(body.tags.map(String))
+      : normalizeTags(String(body.tags));
+  const missingTags = await findMissingGalleryTags(env, tags);
+  if (missingTags.length > 0) {
+    return json({ error: `Unknown gallery tag: ${missingTags.join(', ')}` }, { status: 400 });
+  }
+
   const next = {
     title: stringValue(body.title, current.title),
     author: stringValue(body.author, current.author),
@@ -43,11 +54,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ env, params, request 
     lensCatalogId: nullableStringValue(body.lensCatalogId, current.lens_catalog_id),
     focal: numberValue(body.focal, current.focal),
     aperture: numberValue(body.aperture, current.aperture),
-    tags: body.tags == null
-      ? parseTags(current.tags_json)
-      : Array.isArray(body.tags)
-        ? body.tags.map(String)
-        : normalizeTags(String(body.tags)),
+    tags,
     metadataSource: body.metadataSource == null
       ? current.metadata_source_json
       : JSON.stringify(body.metadataSource),

@@ -55,6 +55,46 @@ export interface CatalogRefreshResult {
   error?: string;
 }
 
+export interface AdminUserSummary {
+  blocked: boolean;
+  connections: string[];
+  createdAt?: string;
+  email?: string;
+  emailVerified: boolean;
+  id: string;
+  lastIp?: string;
+  lastLogin?: string;
+  loginsCount: number;
+  name?: string;
+  picture?: string;
+  providers: string[];
+  updatedAt?: string;
+}
+
+export interface AdminUsersStats {
+  activeLast30Days: number;
+  blocked: number;
+  createdLast7Days: number;
+  databaseUsers: number;
+  providerCounts: Record<string, number>;
+  socialLoginUsers: number;
+  total: number;
+  unverifiedEmail: number;
+  verifiedEmail: number;
+  visible: number;
+}
+
+export interface AdminUsersResponse {
+  ok: true;
+  page: number;
+  perPage: number;
+  query: string;
+  returned: number;
+  stats: AdminUsersStats;
+  total: number;
+  users: AdminUserSummary[];
+}
+
 export class AdminApiError extends Error {
   status: number;
 
@@ -100,6 +140,18 @@ async function adminFetch<T>(path: string, init: RequestInit = {}, accessToken?:
 
 export function getAdminIdentity(accessToken: string): Promise<{ ok: true; identity: AdminIdentity }> {
   return adminFetchFrom<{ ok: true; identity: AdminIdentity }>(`${adminRoot()}/me`, {}, accessToken);
+}
+
+export function getAdminUsers(
+  accessToken: string,
+  options: { page?: number; perPage?: number; q?: string } = {},
+): Promise<AdminUsersResponse> {
+  const params = new URLSearchParams({
+    page: String(options.page ?? 0),
+    perPage: String(options.perPage ?? 50),
+  });
+  if (options.q?.trim()) params.set('q', options.q.trim());
+  return adminFetchFrom<AdminUsersResponse>(`${adminRoot()}/users?${params.toString()}`, {}, accessToken);
 }
 
 async function adminFetchFrom<T>(url: string, init: RequestInit = {}, accessToken?: string): Promise<T> {

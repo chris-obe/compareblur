@@ -3,6 +3,13 @@ export interface GalleryEnv {
   GALLERY_BUCKET: R2Bucket;
 }
 
+export interface GalleryReactionCounts {
+  dislike: number;
+  like: number;
+  love: number;
+  total: number;
+}
+
 export interface GalleryRow {
   id: string;
   title: string;
@@ -38,7 +45,7 @@ export function json(body: unknown, init: ResponseInit = {}) {
   });
 }
 
-export function photoFromRow(row: GalleryRow, admin = false) {
+export function photoFromRow(row: GalleryRow, admin = false, reactionCounts?: GalleryReactionCounts) {
   const src = admin ? `/api/admin/gallery/${row.id}/image` : `/api/gallery/photos/${row.id}/image`;
   return {
     id: row.id,
@@ -54,6 +61,7 @@ export function photoFromRow(row: GalleryRow, admin = false) {
     focal: row.focal,
     aperture: row.aperture,
     tags: parseTags(row.tags_json),
+    reactionCounts,
     metadataSource: admin ? parseMetadataSource(row.metadata_source_json) : undefined,
     objectKey: admin ? row.object_key : undefined,
     contentType: admin ? row.content_type : undefined,
@@ -87,12 +95,8 @@ export function parseTags(value: string | null | undefined): string[] {
 }
 
 export function normalizeTags(value: FormDataEntryValue | string[] | null): string[] {
-  if (Array.isArray(value)) return value.map((tag) => tag.trim().toLowerCase()).filter(Boolean);
-  if (typeof value !== 'string') return [];
-  return value
-    .split(',')
-    .map((tag) => tag.trim().toLowerCase())
-    .filter(Boolean);
+  const raw = Array.isArray(value) ? value : typeof value === 'string' ? value.split(',') : [];
+  return [...new Set(raw.map((tag) => tag.trim().toLowerCase().replace(/\s+/g, ' ')).filter(Boolean))];
 }
 
 export async function findPhoto(env: GalleryEnv, id: string): Promise<GalleryRow | null> {

@@ -8,6 +8,7 @@ import {
 } from '../../../_lib/gallery';
 import { adminAuthError, requireAdmin } from '../../../_lib/admin';
 import { galleryFormatIdOrDefault } from '../../../_lib/formats';
+import { findMissingGalleryTags } from '../../../_lib/galleryTags';
 
 type Env = GalleryEnv & {
   AUTH0_AUDIENCE?: string;
@@ -64,6 +65,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ env, request }) => {
 
   const formatId = galleryFormatIdOrDefault(form.get('formatId'));
   if (!formatId) return json({ error: 'invalid formatId' }, { status: 400 });
+  const tags = normalizeTags(form.get('tags'));
+  const missingTags = await findMissingGalleryTags(env, tags);
+  if (missingTags.length > 0) {
+    return json({ error: `Unknown gallery tag: ${missingTags.join(', ')}` }, { status: 400 });
+  }
 
   await env.GALLERY_BUCKET.put(objectKey, file.stream(), {
     httpMetadata: { contentType: file.type || 'application/octet-stream' },
@@ -95,7 +101,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ env, request }) => {
       stringOrNull(form.get('lensCatalogId')),
       numberOrDefault(form.get('focal'), 50),
       numberOrDefault(form.get('aperture'), 1.8),
-      JSON.stringify(normalizeTags(form.get('tags'))),
+      JSON.stringify(tags),
       stringOrNull(form.get('metadataSource')),
       String(form.get('submittedBy') ?? ''),
       String(form.get('notes') ?? ''),

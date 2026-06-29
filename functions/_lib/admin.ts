@@ -51,27 +51,32 @@ export function requireAdminRequest(request: Request, env: AdminEnv): Response |
   return json({ error: 'admin authorization required' }, { status: 401 });
 }
 
+export async function requireAuth0User(request: Request, env: AdminEnv): Promise<AdminIdentity> {
+  const token = bearerToken(request);
+  if (!token) throw httpError(401, 'missing bearer token');
+
+  const payload = await verifyAuth0Jwt(token, env);
+  return {
+    sub: payload.sub ?? '',
+    email: payload.email,
+    name: payload.name,
+    permissions: Array.isArray(payload.permissions) ? payload.permissions : [],
+  };
+}
+
 export async function requireAuth0Admin(
   request: Request,
   env: AdminEnv,
   requiredPermissions: string[] = ['admin:access'],
 ): Promise<AdminIdentity> {
-  const token = bearerToken(request);
-  if (!token) throw httpError(401, 'missing bearer token');
-
-  const payload = await verifyAuth0Jwt(token, env);
-  const permissions = Array.isArray(payload.permissions) ? payload.permissions : [];
+  const identity = await requireAuth0User(request, env);
+  const permissions = identity.permissions;
   const granted = new Set(permissions);
   if (!requiredPermissions.every((permission) => granted.has(permission))) {
     throw httpError(403, 'missing admin permission');
   }
 
-  return {
-    sub: payload.sub ?? '',
-    email: payload.email,
-    name: payload.name,
-    permissions,
-  };
+  return identity;
 }
 
 export async function requireAdmin(

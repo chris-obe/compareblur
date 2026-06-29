@@ -1,5 +1,6 @@
 import { ThumbsDown, ThumbsUp } from 'lucide-react';
-import { useReactions, type Reaction } from '../../store/ReactionsProvider';
+import { useReactions } from '../../store/ReactionsProvider';
+import type { Reaction } from '../../lib/reactions';
 
 interface Option {
   id: Reaction;
@@ -65,16 +66,22 @@ interface Props {
 // Reused in both places: gallery cards (compact, reveals on card hover) and the
 // lightbox (expanded, always shown). Reads/writes the shared reactions store.
 export function ReactionBar({ photoId, mode, className = '' }: Props) {
-  const { get, set } = useReactions();
+  const { get, getCounts, set } = useReactions();
   const value = get(photoId);
+  const counts = getCounts(photoId);
   const choose = (id: Reaction) => set(photoId, value === id ? null : id);
 
   if (mode === 'expanded') {
     return (
-      <div className={['flex items-center gap-2', className].join(' ')}>
-        {OPTIONS.map((o) => (
-          <OptionButton key={o.id} option={o} active={value === o.id} big onClick={() => choose(o.id)} />
-        ))}
+      <div className={['flex flex-wrap items-center gap-3', className].join(' ')}>
+        <div className="flex items-center gap-2">
+          {OPTIONS.map((o) => (
+            <OptionButton key={o.id} option={o} active={value === o.id} big onClick={() => choose(o.id)} />
+          ))}
+        </div>
+        <div className="label">
+          {counts.total} total · {counts.like} likes · {counts.love} loves
+        </div>
       </div>
     );
   }
