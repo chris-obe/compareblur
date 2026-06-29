@@ -1,9 +1,10 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getFormat } from '../../lib/engine';
 import { categoryForFormat, type CategoryId } from '../../lib/categories';
 import { GALLERY_SEED } from '../../data/gallery.seed';
 import type { GalleryItem, ViewEntry } from '../../lib/types';
 import { extractExif } from '../../lib/exif';
+import { listGalleryPhotos } from '../../lib/galleryApi';
 import { FilterBar } from './FilterBar';
 import { UploadBox } from './UploadBox';
 import { GalleryGrid } from './GalleryGrid';
@@ -33,6 +34,7 @@ export function GalleryPage() {
   const [tags, setTags] = useState<string[]>([]);
   const [view, setView] = useState<View | null>(null);
   const [busy, setBusy] = useState(false);
+  const [items, setItems] = useState<GalleryItem[]>(GALLERY_SEED);
   const objectUrl = useRef<string | null>(null);
 
   // live registry of grid-thumbnail DOM nodes, so the lightbox can morph open
@@ -47,8 +49,28 @@ export function GalleryPage() {
     [],
   );
 
+  useEffect(() => {
+    let cancelled = false;
+    listGalleryPhotos()
+      .then((photos) => {
+        if (cancelled) return;
+        if (photos.length > 0) {
+          setItems(photos);
+        } else {
+          setItems(GALLERY_SEED);
+        }
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setItems(GALLERY_SEED);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const filtered = useMemo(() => {
-    return GALLERY_SEED.filter((item) => {
+    return items.filter((item) => {
       if (formats.size > 0) {
         const cat = categoryForFormat(item.formatId);
         if (!cat || !formats.has(cat)) return false;
@@ -56,7 +78,9 @@ export function GalleryPage() {
       if (tags.length > 0 && !tags.every((t) => item.tags.includes(t))) return false;
       return true;
     });
-  }, [formats, tags]);
+  }, [formats, items, tags]);
+
+  const allTags = useMemo(() => [...new Set(items.flatMap((item) => item.tags))].sort(), [items]);
 
   const toggleFormat = (id: CategoryId) =>
     setFormats((prev) => {
@@ -122,6 +146,7 @@ export function GalleryPage() {
         formats={formats}
         toggleFormat={toggleFormat}
         tags={tags}
+        allTags={allTags}
         addTag={addTag}
         removeTag={removeTag}
         resultCount={filtered.length}

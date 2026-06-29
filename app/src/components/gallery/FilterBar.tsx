@@ -6,6 +6,7 @@ interface Props {
   formats: Set<CategoryId>;
   toggleFormat: (id: CategoryId) => void;
   tags: string[];
+  allTags: string[];
   addTag: (t: string) => void;
   removeTag: (t: string) => void;
   resultCount: number;
@@ -15,6 +16,7 @@ export function FilterBar({
   formats,
   toggleFormat,
   tags,
+  allTags,
   addTag,
   removeTag,
   resultCount,
@@ -26,7 +28,7 @@ export function FilterBar({
           <FormatFilter selected={formats} onToggle={toggleFormat} />
           <span className="label">{resultCount} images</span>
         </div>
-        <TagSearch tags={tags} onAdd={addTag} onRemove={removeTag} />
+        <TagSearch tags={tags} allTags={allTags} onAdd={addTag} onRemove={removeTag} />
       </div>
     </div>
   );

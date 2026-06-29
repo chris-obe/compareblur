@@ -1,23 +1,23 @@
 import { useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Chip } from '../ui/Chip';
-import { ALL_TAGS } from '../../data/gallery.seed';
 
 interface Props {
   tags: string[];
+  allTags: string[];
   onAdd: (tag: string) => void;
   onRemove: (tag: string) => void;
 }
 
-export function TagSearch({ tags, onAdd, onRemove }: Props) {
+export function TagSearch({ tags, allTags, onAdd, onRemove }: Props) {
   const [value, setValue] = useState('');
   const [focused, setFocused] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const suggestions = useMemo(() => {
     const q = value.trim().toLowerCase();
-    return ALL_TAGS.filter((t) => !tags.includes(t) && (q === '' || t.includes(q))).slice(0, 6);
-  }, [value, tags]);
+    return allTags.filter((t) => !tags.includes(t) && (q === '' || t.includes(q))).slice(0, 6);
+  }, [allTags, value, tags]);
 
   const commit = (tag: string) => {
     const t = tag.trim().toLowerCase();
