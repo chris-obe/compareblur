@@ -2,6 +2,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { useAuth0 } from '@auth0/auth0-react';
 import {
   AlertTriangle,
+  ArrowDown,
+  ArrowUp,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
   CheckCircle2,
   Copy,
   Database,
@@ -988,21 +994,18 @@ function CatalogDatasetViewer({
               mountOptions={mountOptions}
               formatOptions={formatOptions}
               pageSize={pageSize}
+              page={safePage}
+              pageCount={pageCount}
+              rowStart={sortedRows.length === 0 ? 0 : safePage * pageSize + 1}
+              rowEnd={Math.min(sortedRows.length, safePage * pageSize + pageRows.length)}
+              rowTotal={sortedRows.length}
               onFilterChange={updateFilter}
               onPageSizeChange={setPageSize}
+              onPageChange={setPage}
               structuredFilters={view === 'cameras' || view === 'lenses'}
             />
             <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(22rem,0.45fr)]">
               <div className="min-w-0">
-                <div className="mb-2 flex items-center justify-between gap-3 text-xs text-muted">
-                  <span>
-                    Showing {pageRows.length} of {sortedRows.length} rows
-                    {activeRows.length !== sortedRows.length ? ` from ${activeRows.length}` : ''}
-                  </span>
-                  <span>
-                    Page {safePage + 1} of {pageCount}
-                  </span>
-                </div>
                 <CatalogDataTable
                   rows={pageRows}
                   columns={activeColumns}
@@ -1012,17 +1015,6 @@ function CatalogDatasetViewer({
                   onSort={toggleSort}
                   onSelect={setSelectedRowKey}
                 />
-                <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-                  <Button onClick={() => setPage((current) => Math.max(0, current - 1))} disabled={safePage === 0}>
-                    Previous
-                  </Button>
-                  <span className="text-xs text-muted">
-                    Rows {sortedRows.length === 0 ? 0 : safePage * pageSize + 1}-{Math.min(sortedRows.length, safePage * pageSize + pageRows.length)}
-                  </span>
-                  <Button onClick={() => setPage((current) => Math.min(pageCount - 1, current + 1))} disabled={safePage >= pageCount - 1}>
-                    Next
-                  </Button>
-                </div>
               </div>
               <CatalogRowDetails row={selectedRow} onCopy={copyRowJson} copied={rowCopied} />
             </div>
@@ -1485,53 +1477,65 @@ function CatalogTableControls({
   mountOptions,
   formatOptions,
   pageSize,
+  page,
+  pageCount,
+  rowStart,
+  rowEnd,
+  rowTotal,
   structuredFilters,
   onFilterChange,
   onPageSizeChange,
+  onPageChange,
 }: {
   filters: CatalogTableFilters;
   sourceOptions: string[];
   mountOptions: string[];
   formatOptions: string[];
   pageSize: number;
+  page: number;
+  pageCount: number;
+  rowStart: number;
+  rowEnd: number;
+  rowTotal: number;
   structuredFilters: boolean;
   onFilterChange: <K extends keyof CatalogTableFilters>(key: K, value: CatalogTableFilters[K]) => void;
   onPageSizeChange: (value: number) => void;
+  onPageChange: (value: number | ((current: number) => number)) => void;
 }) {
+  const canGoBack = page > 0;
+  const canGoForward = page < pageCount - 1;
+
   return (
-    <div className="grid gap-3 border border-line p-3 lg:grid-cols-[minmax(14rem,1fr)_repeat(6,minmax(8rem,0.5fr))]">
-      <label className="block">
-        <span className="label mb-2 block">Search rows</span>
+    <div className="flex flex-wrap items-end gap-2 border border-line p-2">
+      <LabeledControl label="Search" className="min-w-[14rem] flex-[2_1_18rem]">
         <input
           value={filters.query}
           onChange={(event) => onFilterChange('query', event.target.value)}
           placeholder="id, maker, name, source, mount"
-          className="h-9 w-full border border-line bg-transparent px-3 text-sm outline-none focus:border-line-strong"
+          className="h-8 w-full border border-line bg-transparent px-2 text-xs outline-none focus:border-line-strong"
         />
-      </label>
+      </LabeledControl>
 
-      <label className="block">
-        <span className="label mb-2 block">Source type</span>
+      <LabeledControl label="Type" className="w-32">
         <select
           value={filters.sourceType}
           onChange={(event) => onFilterChange('sourceType', event.target.value as CatalogTableFilters['sourceType'])}
           disabled={!structuredFilters}
-          className="h-9 w-full border border-line bg-transparent px-3 text-sm outline-none focus:border-line-strong disabled:opacity-40"
+          className="h-8 w-full border border-line bg-transparent px-2 text-xs outline-none focus:border-line-strong disabled:opacity-40"
         >
           <option value="all">All</option>
           <option value="external">External</option>
           <option value="derived">Derived</option>
           <option value="curated">Curated</option>
         </select>
-      </label>
+      </LabeledControl>
 
-      <label className="block">
-        <span className="label mb-2 block">Source</span>
+      <LabeledControl label="Source" className="w-36">
         <select
           value={filters.primarySource}
           onChange={(event) => onFilterChange('primarySource', event.target.value)}
           disabled={!structuredFilters}
-          className="h-9 w-full border border-line bg-transparent px-3 text-sm outline-none focus:border-line-strong disabled:opacity-40"
+          className="h-8 w-full border border-line bg-transparent px-2 text-xs outline-none focus:border-line-strong disabled:opacity-40"
         >
           <option value="">All</option>
           {sourceOptions.map((option) => (
@@ -1540,15 +1544,14 @@ function CatalogTableControls({
             </option>
           ))}
         </select>
-      </label>
+      </LabeledControl>
 
-      <label className="block">
-        <span className="label mb-2 block">Mount</span>
+      <LabeledControl label="Mount" className="w-32">
         <select
           value={filters.mount}
           onChange={(event) => onFilterChange('mount', event.target.value)}
           disabled={!structuredFilters}
-          className="h-9 w-full border border-line bg-transparent px-3 text-sm outline-none focus:border-line-strong disabled:opacity-40"
+          className="h-8 w-full border border-line bg-transparent px-2 text-xs outline-none focus:border-line-strong disabled:opacity-40"
         >
           <option value="">All</option>
           {mountOptions.map((option) => (
@@ -1557,15 +1560,14 @@ function CatalogTableControls({
             </option>
           ))}
         </select>
-      </label>
+      </LabeledControl>
 
-      <label className="block">
-        <span className="label mb-2 block">Format</span>
+      <LabeledControl label="Format" className="w-32">
         <select
           value={filters.format}
           onChange={(event) => onFilterChange('format', event.target.value)}
           disabled={!structuredFilters}
-          className="h-9 w-full border border-line bg-transparent px-3 text-sm outline-none focus:border-line-strong disabled:opacity-40"
+          className="h-8 w-full border border-line bg-transparent px-2 text-xs outline-none focus:border-line-strong disabled:opacity-40"
         >
           <option value="">All</option>
           {formatOptions.map((option) => (
@@ -1574,15 +1576,14 @@ function CatalogTableControls({
             </option>
           ))}
         </select>
-      </label>
+      </LabeledControl>
 
-      <label className="block">
-        <span className="label mb-2 block">Flag</span>
+      <LabeledControl label="Flag" className="w-32">
         <select
           value={filters.flag}
           onChange={(event) => onFilterChange('flag', event.target.value as CatalogFlagFilter)}
           disabled={!structuredFilters}
-          className="h-9 w-full border border-line bg-transparent px-3 text-sm outline-none focus:border-line-strong disabled:opacity-40"
+          className="h-8 w-full border border-line bg-transparent px-2 text-xs outline-none focus:border-line-strong disabled:opacity-40"
         >
           <option value="all">All</option>
           <option value="curated">Curated</option>
@@ -1592,21 +1593,97 @@ function CatalogTableControls({
           <option value="manual">Manual</option>
           <option value="thirdParty">Third-party</option>
         </select>
-      </label>
+      </LabeledControl>
 
-      <label className="block">
-        <span className="label mb-2 block">Page size</span>
+      <div className="ml-auto flex flex-wrap items-end gap-2">
+        <div className="flex h-8 items-center border border-line px-2 text-xs text-muted tabular-nums" title="Visible row range">
+          {rowStart}-{rowEnd} / {rowTotal}
+        </div>
+        <div className="flex h-8 items-center border border-line">
+          <span className="px-2 text-[10px] uppercase tracking-wide text-muted">Page</span>
+          <input
+            type="number"
+            min={1}
+            max={pageCount}
+            value={page + 1}
+            onChange={(event) => {
+              const next = Number(event.target.value);
+              if (Number.isFinite(next)) onPageChange(Math.max(0, Math.min(pageCount - 1, next - 1)));
+            }}
+            aria-label="Go to page"
+            className="h-7 w-12 border-l border-line bg-transparent px-1 text-center text-xs outline-none focus:border-line-strong"
+          />
+          <span className="px-2 text-xs text-muted tabular-nums">/ {pageCount}</span>
+        </div>
         <select
           value={pageSize}
           onChange={(event) => onPageSizeChange(Number(event.target.value))}
-          className="h-9 w-full border border-line bg-transparent px-3 text-sm outline-none focus:border-line-strong"
+          aria-label="Rows per page"
+          title="Rows per page"
+          className="h-8 w-16 border border-line bg-transparent px-2 text-xs outline-none focus:border-line-strong"
         >
           <option value={50}>50</option>
           <option value={100}>100</option>
           <option value={250}>250</option>
         </select>
-      </label>
+        <div className="flex h-8 border border-line">
+          <TablePageButton label="First page" disabled={!canGoBack} onClick={() => onPageChange(0)}>
+            <ChevronsLeft size={14} strokeWidth={1.5} />
+          </TablePageButton>
+          <TablePageButton label="Previous page" disabled={!canGoBack} onClick={() => onPageChange((current) => Math.max(0, current - 1))}>
+            <ChevronLeft size={14} strokeWidth={1.5} />
+          </TablePageButton>
+          <TablePageButton label="Next page" disabled={!canGoForward} onClick={() => onPageChange((current) => Math.min(pageCount - 1, current + 1))}>
+            <ChevronRight size={14} strokeWidth={1.5} />
+          </TablePageButton>
+          <TablePageButton label="Last page" disabled={!canGoForward} onClick={() => onPageChange(pageCount - 1)}>
+            <ChevronsRight size={14} strokeWidth={1.5} />
+          </TablePageButton>
+        </div>
+      </div>
     </div>
+  );
+}
+
+function LabeledControl({
+  label,
+  className,
+  children,
+}: {
+  label: string;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className={['block min-w-0', className ?? ''].join(' ')}>
+      <span className="label mb-1 block">{label}</span>
+      {children}
+    </label>
+  );
+}
+
+function TablePageButton({
+  label,
+  disabled,
+  onClick,
+  children,
+}: {
+  label: string;
+  disabled: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={label}
+      title={label}
+      className="flex h-8 w-8 items-center justify-center border-r border-line text-muted transition-colors last:border-r-0 hover:bg-faint hover:text-fg disabled:pointer-events-none disabled:opacity-30"
+    >
+      {children}
+    </button>
   );
 }
 
@@ -1628,15 +1705,19 @@ function CatalogDataTable({
   onSelect: (rowKey: string) => void;
 }) {
   return (
-    <div className="overflow-x-auto border border-line">
+    <div className="max-h-[62vh] overflow-auto border border-line lg:max-h-[68vh]">
       <table className="w-full min-w-[70rem] text-left text-xs">
-        <thead className="border-b border-line bg-faint text-muted">
+        <thead className="sticky top-0 z-10 border-b border-line bg-faint text-muted">
           <tr>
             {columns.map((column) => (
               <th key={column.id} className={['px-3 py-2 font-normal uppercase tracking-wide', column.className ?? ''].join(' ')}>
                 <button type="button" onClick={() => onSort(column.id)} className="inline-flex items-center gap-1 hover:text-fg">
                   {column.label}
-                  {sortBy === column.id && <span>{sortDirection === 'asc' ? 'Up' : 'Down'}</span>}
+                  {sortBy === column.id && (
+                    sortDirection === 'asc'
+                      ? <ArrowUp size={12} strokeWidth={1.5} aria-label="sorted ascending" />
+                      : <ArrowDown size={12} strokeWidth={1.5} aria-label="sorted descending" />
+                  )}
                 </button>
               </th>
             ))}
