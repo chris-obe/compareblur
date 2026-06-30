@@ -3,6 +3,7 @@
 ## Deployment
 
 - Use `blur` as the visible product/site name in app chrome and browser titles; do not reintroduce `howmuchblur` as user-facing branding.
+- For Christian's fork publishing flow, use the `fork` remote at `https://github.com/chris-obe/Blur.git` and push ongoing work to `fork/master` unless a separate feature branch or PR is explicitly requested.
 - Keep the root README product-led and visually consistent with the app's restrained hard-edged style. It should introduce blur, its back story, and practical use cases before operational details; keep self-hosting/setup content minimal and collapsed near the bottom.
 - Keep the desktop main navigation sidebar collapsible. New sidebar destinations must work in both expanded and icon-only states, with hard-edged hover/focus tooltips for collapsed labels. Keep the collapse/expand control in the sidebar's top brand chrome, not as a navigation item or footer control.
 - Keep Compare system selection as three minimal stacked options: a `From kit` dropdown containing full saved body/lens combinations, a catalog `Camera + lens` picker, and a `Manual` entry for format, focal length, and aperture. Reuse the app's custom dropdown/search components rather than native HTML select styling.
