@@ -1,3 +1,5 @@
+import { curatedProvenance, externalProvenance, sourceRef } from './provenance.mjs';
+
 const FORMAT_CLASSES = [
   { id: 'ff', w: 36, h: 24, names: ['35mm film', 'full frame'] },
   { id: 'apsc', w: 23.5, h: 15.6, names: ['aps-c'] },
@@ -26,14 +28,14 @@ const IMPORTANT_COMPACT_RE = new RegExp(
   'i',
 );
 
-export function normalizeCompactRecords(records) {
+export function normalizeCompactRecords(records, sourceMetaById = {}) {
   const cameras = [];
   const lenses = [];
   const bindings = [];
   const seen = new Set();
 
   for (const record of records) {
-    const normalized = normalizeCompactRecord(record);
+    const normalized = normalizeCompactRecord(record, sourceMetaById);
     if (!normalized) continue;
     if (seen.has(normalized.camera.id)) continue;
     seen.add(normalized.camera.id);
@@ -49,7 +51,7 @@ export function normalizeCompactRecords(records) {
   };
 }
 
-function normalizeCompactRecord(record) {
+function normalizeCompactRecord(record, sourceMetaById) {
   const maker = clean(record.Brand);
   const model = clean(record.Model);
   if (!maker || !model) return null;
@@ -80,8 +82,8 @@ function normalizeCompactRecord(record) {
     mount,
     formatId,
     fixedLensId: `${id}-fixed-lens`,
-    source: clean(record.source) || 'camera-database',
     year: parseInteger(record.Year),
+    ...compactProvenance(record, id, ['identity', 'formatId', 'fixedLensId', 'year'], sourceMetaById),
   };
 
   const aperturePoints =
@@ -107,7 +109,7 @@ function normalizeCompactRecord(record) {
     thirdParty: false,
     fixed: true,
     aperturePoints,
-    source: camera.source,
+    ...compactProvenance(record, `${id}-fixed-lens`, ['identity', 'fixedLens', 'coverage', 'focal', 'aperture'], sourceMetaById),
   };
 
   return {
@@ -119,6 +121,23 @@ function normalizeCompactRecord(record) {
       type: 'fixed',
     },
   };
+}
+
+function compactProvenance(record, recordId, fields, sourceMetaById) {
+  const sourceId = clean(record.source) || 'camera-database';
+  if (sourceId.startsWith('curated-')) {
+    return curatedProvenance(recordId, 'missing-from-current-external-sources', fields);
+  }
+  const sourceMeta = sourceMetaById[sourceId] ?? {};
+  return externalProvenance(sourceRef({
+    id: sourceId,
+    recordId,
+    url: sourceMeta.url,
+    license: sourceMeta.license,
+    fetchedAt: sourceMeta.fetchedAt,
+    confidence: 0.84,
+    fields,
+  }));
 }
 
 function fixedLensName(focalMin, focalMax, apWide, apTele, focalEq) {

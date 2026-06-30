@@ -12,6 +12,7 @@ interface Env {
 
 function workerPath(path?: string | string[]) {
   const parts = Array.isArray(path) ? path : path ? [path] : ['status'];
+  if (parts[0] === 'latest') return `/catalog/${parts.join('/')}`;
   return `/admin/${parts.join('/')}`;
 }
 

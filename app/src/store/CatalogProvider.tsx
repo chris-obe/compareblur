@@ -22,6 +22,7 @@ interface CatalogContextValue {
   status: 'loading' | 'ready' | 'fallback' | 'error';
   source: string;
   generatedAt?: string;
+  raw: CatalogExport | null;
   refresh: () => Promise<void>;
 }
 
@@ -79,6 +80,7 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
       status,
       source,
       generatedAt: remote?.generatedAt,
+      raw: remote,
       refresh: load,
     };
   }, [remote, status, source]);

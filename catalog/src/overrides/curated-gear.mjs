@@ -1,8 +1,24 @@
+import { curatedProvenance } from '../provenance.mjs';
+
 const bodyRows = (maker, mount, formatId, rows) =>
-  rows.map(([id, name]) => ({ id, name, maker, mount, formatId }));
+  rows.map(([id, name]) => ({
+    id,
+    name,
+    maker,
+    mount,
+    formatId,
+    ...curatedProvenance(id, 'source-backbone-gap-or-emergency-fallback', ['identity', 'mount', 'formatId']),
+  }));
 
 const legacyCameraRows = (maker, mount, rows) =>
-  rows.map(([id, name, formatId]) => ({ id, name, maker, mount, formatId }));
+  rows.map(([id, name, formatId]) => ({
+    id,
+    name,
+    maker,
+    mount,
+    formatId,
+    ...curatedProvenance(id, 'source-backbone-gap-or-emergency-fallback', ['identity', 'mount', 'formatId']),
+  }));
 
 export const LEGACY_CAMERAS = [
   ...legacyCameraRows('Canon', 'EF', [
@@ -35,8 +51,12 @@ export const LEGACY_CAMERAS = [
     ['minolta-maxxum7', 'Maxxum 7 (film)', 'film-135'], ['minolta-maxxum9', 'Maxxum 9 (film)', 'film-135'],
   ]),
   ...legacyCameraRows('Leica', 'M', [
-    ['leica-m240', 'M (Typ 240)', 'ff'], ['leica-m10', 'M10', 'ff'], ['leica-m10r', 'M10-R', 'ff'],
-    ['leica-m11', 'M11', 'ff'],
+    ['leica-m9', 'M9', 'ff'], ['leica-m9p', 'M9-P', 'ff'], ['leica-me-typ-220', 'M-E (Typ 220)', 'ff'],
+    ['leica-m-monochrom', 'M Monochrom', 'ff'], ['leica-m240', 'M (Typ 240)', 'ff'],
+    ['leica-m-monochrom-typ-246', 'M Monochrom (Typ 246)', 'ff'], ['leica-m262', 'M (Typ 262)', 'ff'],
+    ['leica-m10', 'M10', 'ff'], ['leica-m10p', 'M10-P', 'ff'], ['leica-m10r', 'M10-R', 'ff'],
+    ['leica-m10-monochrom', 'M10 Monochrom', 'ff'], ['leica-m11', 'M11', 'ff'],
+    ['leica-m11-monochrom', 'M11 Monochrom', 'ff'],
     ['leica-m6', 'M6 (film)', 'film-135'], ['leica-m7', 'M7 (film)', 'film-135'],
     ['leica-mp', 'MP (film)', 'film-135'],
   ]),
@@ -125,6 +145,7 @@ const F_DX = ['apsc'];
 const K_FF = ['ff', 'apsc', 'film-135'];
 const K_APS = ['apsc'];
 const A_FF = ['ff', 'apsc', 'film-135'];
+const M_FF = ['ff', 'film-135'];
 
 const aperturePoints = (focalMin, focalMax, apWide, apTele = apWide) =>
   focalMin === focalMax
@@ -151,6 +172,7 @@ const lens = (
   af,
   thirdParty,
   aperturePoints: aperturePoints(fMin, fMax, apMax),
+  ...curatedProvenance(id, 'missing-from-current-external-sources', ['identity', 'mounts', 'coverage', 'focal', 'aperture']),
 });
 
 export const LEGACY_LENSES = [
@@ -202,7 +224,38 @@ export const GF_LENSES = [
   lens('gf-250-4', 'GF 250mm F4 R LM OIS WR', 'Fujifilm', 'G', ['gfx'], 250, 250, 4, true, false, 32),
 ];
 
+export const VM_LENSES = [
+  lens('vm-10-56-hyper-wide-heliar', 'Hyper Wide-Heliar 10mm f/5.6 Aspherical VM', 'Voigtländer', 'M', M_FF, 10, 10, 5.6, false, true, 22),
+  lens('vm-15-45-super-wide-heliar-iii', 'Super Wide-Heliar 15mm f/4.5 Aspherical III VM', 'Voigtländer', 'M', M_FF, 15, 15, 4.5, false, true, 22),
+  lens('vm-21-14-nokton', 'Nokton 21mm f/1.4 Aspherical VM', 'Voigtländer', 'M', M_FF, 21, 21, 1.4, false, true, 16),
+  lens('vm-21-35-color-skopar', 'Color-Skopar 21mm f/3.5 Aspherical VM', 'Voigtländer', 'M', M_FF, 21, 21, 3.5, false, true, 22),
+  lens('vm-28-15-nokton', 'Nokton 28mm f/1.5 Aspherical VM', 'Voigtländer', 'M', M_FF, 28, 28, 1.5, false, true, 16),
+  lens('vm-28-2-apo-lanthar', 'APO-Lanthar 28mm f/2 Aspherical VM', 'Voigtländer', 'M', M_FF, 28, 28, 2, false, true, 16),
+  lens('vm-28-2-ultron-ii', 'Ultron Vintage Line 28mm f/2 Aspherical Type II VM', 'Voigtländer', 'M', M_FF, 28, 28, 2, false, true, 16),
+  lens('vm-28-28-color-skopar', 'Color-Skopar 28mm f/2.8 Aspherical VM', 'Voigtländer', 'M', M_FF, 28, 28, 2.8, false, true, 22),
+  lens('vm-35-12-nokton-iii', 'Nokton 35mm f/1.2 Aspherical III VM', 'Voigtländer', 'M', M_FF, 35, 35, 1.2, false, true, 16),
+  lens('vm-35-14-nokton-classic-ii', 'Nokton Classic 35mm f/1.4 II VM', 'Voigtländer', 'M', M_FF, 35, 35, 1.4, false, true, 16),
+  lens('vm-35-15-nokton', 'Nokton 35mm f/1.5 Aspherical VM', 'Voigtländer', 'M', M_FF, 35, 35, 1.5, false, true, 16),
+  lens('vm-35-2-apo-lanthar', 'APO-Lanthar 35mm f/2 Aspherical VM', 'Voigtländer', 'M', M_FF, 35, 35, 2, false, true, 16),
+  lens('vm-35-2-ultron', 'Ultron Vintage Line 35mm f/2 Aspherical VM', 'Voigtländer', 'M', M_FF, 35, 35, 2, false, true, 16),
+  lens('vm-35-25-color-skopar', 'Color-Skopar 35mm f/2.5 P II VM', 'Voigtländer', 'M', M_FF, 35, 35, 2.5, false, true, 22),
+  lens('vm-35-35-heliar-classic', 'Heliar Classic 35mm f/3.5 VM', 'Voigtländer', 'M', M_FF, 35, 35, 3.5, false, true, 22),
+  lens('vm-40-12-nokton', 'Nokton 40mm f/1.2 Aspherical VM', 'Voigtländer', 'M', M_FF, 40, 40, 1.2, false, true, 16),
+  lens('vm-40-14-nokton-classic', 'Nokton Classic 40mm f/1.4 VM', 'Voigtländer', 'M', M_FF, 40, 40, 1.4, false, true, 16),
+  lens('vm-50-10-nokton', 'Nokton 50mm f/1.0 Aspherical VM', 'Voigtländer', 'M', M_FF, 50, 50, 1, false, true, 16),
+  lens('vm-50-12-nokton', 'Nokton 50mm f/1.2 Aspherical VM', 'Voigtländer', 'M', M_FF, 50, 50, 1.2, false, true, 16),
+  lens('vm-50-15-nokton-ii', 'Nokton Vintage Line 50mm f/1.5 Aspherical II VM', 'Voigtländer', 'M', M_FF, 50, 50, 1.5, false, true, 16),
+  lens('vm-50-15-heliar-classic', 'Heliar Classic 50mm f/1.5 VM', 'Voigtländer', 'M', M_FF, 50, 50, 1.5, false, true, 16),
+  lens('vm-50-2-apo-lanthar', 'APO-Lanthar 50mm f/2 Aspherical VM', 'Voigtländer', 'M', M_FF, 50, 50, 2, false, true, 16),
+  lens('vm-50-22-color-skopar', 'Color-Skopar 50mm f/2.2 VM', 'Voigtländer', 'M', M_FF, 50, 50, 2.2, false, true, 16),
+  lens('vm-50-35-heliar', 'Heliar 50mm f/3.5 VM', 'Voigtländer', 'M', M_FF, 50, 50, 3.5, false, true, 22),
+  lens('vm-75-15-nokton', 'Nokton 75mm f/1.5 Aspherical VM', 'Voigtländer', 'M', M_FF, 75, 75, 1.5, false, true, 16),
+  lens('vm-90-2-apo-ultron', 'APO-Ultron 90mm f/2 VM', 'Voigtländer', 'M', M_FF, 90, 90, 2, false, true, 22),
+  lens('vm-90-28-apo-skopar', 'APO-Skopar 90mm f/2.8 VM', 'Voigtländer', 'M', M_FF, 90, 90, 2.8, false, true, 22),
+];
+
 export const CURATED_LENSES = [
   ...GF_LENSES,
+  ...VM_LENSES,
   ...LEGACY_LENSES,
 ];

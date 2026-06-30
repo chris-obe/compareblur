@@ -15,6 +15,13 @@ interface Props {
   placeholder?: string;
 }
 
+function searchableText(value: string) {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
 // Single-select searchable dropdown with brand (maker) group headers — the
 // single-select sibling of LensMultiSelect, used for camera pickers.
 export function SearchSelect({ options, value, onChange, placeholder }: Props) {
@@ -37,9 +44,9 @@ export function SearchSelect({ options, value, onChange, placeholder }: Props) {
   }, [open]);
 
   const groups = useMemo(() => {
-    const needle = q.trim().toLowerCase();
+    const needle = searchableText(q.trim());
     const filtered = needle
-      ? options.filter((o) => `${o.maker} ${o.label}`.toLowerCase().includes(needle))
+      ? options.filter((o) => searchableText(`${o.maker} ${o.label}`).includes(needle))
       : options;
     return groupByMaker(filtered);
   }, [options, q]);

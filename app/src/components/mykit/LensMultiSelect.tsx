@@ -11,6 +11,13 @@ interface Props {
   placeholder?: string;
 }
 
+function searchableText(value: string) {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
 // Controlled multi-select dropdown: search + brand-grouped checkboxes. Owned
 // lenses are shown checked + disabled.
 export function LensMultiSelect({ lenses, ownedCatalogIds, value, onChange, placeholder }: Props) {
@@ -33,9 +40,9 @@ export function LensMultiSelect({ lenses, ownedCatalogIds, value, onChange, plac
   }, [open]);
 
   const groups = useMemo(() => {
-    const needle = q.trim().toLowerCase();
+    const needle = searchableText(q.trim());
     const filtered = needle
-      ? lenses.filter((l) => `${l.maker} ${l.name}`.toLowerCase().includes(needle))
+      ? lenses.filter((l) => searchableText(`${l.maker} ${l.name}`).includes(needle))
       : lenses;
     return groupByMaker(filtered);
   }, [lenses, q]);

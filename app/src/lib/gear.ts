@@ -10,6 +10,10 @@ export interface Camera {
   formatId: string;
   fixedLensId?: string;
   source?: string;
+  sourceType?: 'external' | 'curated' | 'derived';
+  sources?: CatalogSourceRef[];
+  curatedReason?: string;
+  derivedFrom?: string[];
   year?: number;
 }
 
@@ -39,9 +43,23 @@ export interface CatalogLens {
   thirdParty: boolean;
   fixed?: boolean;
   source?: string;
+  sourceType?: 'external' | 'curated' | 'derived';
+  sources?: CatalogSourceRef[];
+  curatedReason?: string;
+  derivedFrom?: string[];
   // reserved for the future "cheapest / AF lens to get this look" feature:
   // usd = current street price, msrpUsd = new/launch price (lower/upper bounds).
   price?: { usd?: number; msrpUsd?: number };
+}
+
+export interface CatalogSourceRef {
+  id: string;
+  recordId?: string;
+  url?: string;
+  license?: string;
+  fetchedAt?: string;
+  confidence?: number;
+  fields?: string[];
 }
 
 export function cameraFormat(cam: Camera): Format {

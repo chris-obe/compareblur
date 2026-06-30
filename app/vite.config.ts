@@ -140,6 +140,10 @@ function galleryApiProxy(): Plugin {
         proxyRequest(req, res, galleryPagesOrigin, `/api/gallery${req.url ?? ''}`);
       });
 
+      server.middlewares.use('/api/embed', (req: IncomingMessage, res: ServerResponse) => {
+        proxyRequest(req, res, galleryPagesOrigin, `/api/embed${req.url ?? ''}`);
+      });
+
       server.middlewares.use('/api/admin/gallery', (req: IncomingMessage, res: ServerResponse) => {
         if (localAdminAuthRequired()) {
           proxyRequest(req, res, adminPagesOrigin, `/api/admin/gallery${req.url ?? ''}`);
@@ -148,6 +152,16 @@ function galleryApiProxy(): Plugin {
 
         const token = localAdminApiToken();
         proxyRequest(req, res, galleryPagesOrigin, `/api/admin/gallery${req.url ?? ''}`, token);
+      });
+
+      server.middlewares.use('/api/admin/embed', (req: IncomingMessage, res: ServerResponse) => {
+        if (localAdminAuthRequired()) {
+          proxyRequest(req, res, adminPagesOrigin, `/api/admin/embed${req.url ?? ''}`);
+          return;
+        }
+
+        const token = localAdminApiToken();
+        proxyRequest(req, res, galleryPagesOrigin, `/api/admin/embed${req.url ?? ''}`, token);
       });
     },
   };

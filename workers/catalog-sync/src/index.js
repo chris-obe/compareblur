@@ -1,6 +1,9 @@
 import { buildFullCatalog } from '../../../catalog/src/full-catalog.mjs';
+import { fetchLensfun } from '../../../catalog/src/source-lensfun.mjs';
+import { fetchSensorSourceSummaries } from '../../../catalog/src/source-sensor-databases.mjs';
 import { COMPACT_CAMERA_OVERRIDES } from '../../../catalog/src/overrides/compact-cameras.mjs';
 import { BODY_CAMERAS, CURATED_LENSES } from '../../../catalog/src/overrides/curated-gear.mjs';
+import { assertCatalogExportValid } from '../../../catalog/src/validate-export.mjs';
 
 const CAMERA_DATABASE_URL =
   'https://raw.githubusercontent.com/leavestylecode/CameraDatabase/main/data/camera_data.json';
@@ -90,61 +93,86 @@ async function refreshCatalog(env, trigger) {
   ).bind(runId, trigger, startedAt).run();
 
   try {
-    const [cameraDb, lensDb] = await Promise.all([
+    const [cameraDb, lensDb, lensfun, sensorSourceSummaries] = await Promise.all([
       fetchJsonSource('camera-database', CAMERA_DATABASE_URL),
       fetchJsonSource('lens-db', LENSDB_URL),
+      fetchOptionalLensfun(),
+      fetchSensorSourceSummaries(),
     ]);
-    const sourceHash = await sha256(`${cameraDb.text}\n${lensDb.text}`);
+    const sourceHash = await sha256(`${cameraDb.text}\n${lensDb.text}\n${lensfun.text}`);
     const cameraDbHash = await sha256(cameraDb.text);
     const lensDbHash = await sha256(lensDb.text);
+    const lensfunHash = await sha256(lensfun.text);
+    const sources = [
+      {
+        id: 'camera-database',
+        url: CAMERA_DATABASE_URL,
+        fetchedAt: cameraDb.fetchedAt,
+        sha256: cameraDbHash,
+        license: 'MIT',
+        records: cameraDb.records.length,
+      },
+      {
+        id: 'lens-db',
+        url: LENSDB_URL,
+        fetchedAt: lensDb.fetchedAt,
+        sha256: lensDbHash,
+        license: 'CC BY-NC-SA 4.0',
+        records: lensDb.records.length,
+      },
+      {
+        id: 'lensfun',
+        url: lensfun.url,
+        fetchedAt: lensfun.fetchedAt,
+        sha256: lensfunHash,
+        license: 'LGPL-3.0-or-later / Lensfun database terms',
+        records: lensfun.records.length,
+        status: lensfun.status,
+        error: lensfun.error,
+      },
+      {
+        id: 'curated-compact-overrides',
+        license: 'Project curated data',
+        records: COMPACT_CAMERA_OVERRIDES.length,
+      },
+      {
+        id: 'curated-body-cameras',
+        license: 'Project curated data',
+        records: BODY_CAMERAS.length,
+      },
+      {
+        id: 'curated-lenses',
+        license: 'Project curated data',
+        records: CURATED_LENSES.length,
+      },
+      ...sensorSourceSummaries,
+    ];
+    const sourceMetaById = Object.fromEntries(sources.map((source) => [source.id, source]));
     const catalog = buildFullCatalog({
       cameraDatabaseRecords: cameraDb.records,
       lensDbRecords: lensDb.records,
+      lensfunRecords: lensfun.records,
+      sensorSourceSummaries,
+      sourceMetaById,
     });
     const generatedAt = new Date().toISOString();
     const exportBody = {
       generatedAt,
       runId,
-      sources: [
-        {
-          id: 'camera-database',
-          url: CAMERA_DATABASE_URL,
-          fetchedAt: cameraDb.fetchedAt,
-          sha256: cameraDbHash,
-          license: 'MIT',
-        },
-        {
-          id: 'lens-db',
-          url: LENSDB_URL,
-          fetchedAt: lensDb.fetchedAt,
-          sha256: lensDbHash,
-          license: 'CC BY-NC-SA 4.0',
-        },
-        {
-          id: 'curated-compact-overrides',
-          license: 'Project curated data',
-          records: COMPACT_CAMERA_OVERRIDES.length,
-        },
-        {
-          id: 'curated-body-cameras',
-          license: 'Project curated data',
-          records: BODY_CAMERAS.length,
-        },
-        {
-          id: 'curated-lenses',
-          license: 'Project curated data',
-          records: CURATED_LENSES.length,
-        },
-      ],
+      sources,
       cameras: catalog.cameras,
       lenses: catalog.lenses,
       bindings: catalog.bindings,
       compact: catalog.compact,
       stats: catalog.stats,
+      reconReport: catalog.reconReport,
     };
+
+    assertCatalogExportValid(exportBody, { label: `Catalog refresh ${runId}` });
 
     const cameraDbKey = `sources/camera-database/${generatedAt.slice(0, 10)}/${cameraDbHash}.json`;
     const lensDbKey = `sources/lens-db/${generatedAt.slice(0, 10)}/${lensDbHash}.json`;
+    const lensfunKey = `sources/lensfun/${generatedAt.slice(0, 10)}/${lensfunHash}.json`;
     await env.CATALOG_BUCKET.put(cameraDbKey, cameraDb.text, {
       httpMetadata: { contentType: 'application/json' },
       customMetadata: { source: 'camera-database', sha256: cameraDbHash },
@@ -153,8 +181,13 @@ async function refreshCatalog(env, trigger) {
       httpMetadata: { contentType: 'application/json' },
       customMetadata: { source: 'lens-db', sha256: lensDbHash },
     });
+    await env.CATALOG_BUCKET.put(lensfunKey, lensfun.text, {
+      httpMetadata: { contentType: 'application/json' },
+      customMetadata: { source: 'lensfun', sha256: lensfunHash },
+    });
 
     const jsonText = JSON.stringify(exportBody, null, 2);
+    const reportText = JSON.stringify(catalog.reconReport, null, 2);
     await env.CATALOG_BUCKET.put(EXPORT_KEY, jsonText, {
       httpMetadata: { contentType: 'application/json', cacheControl: 'public, max-age=300' },
       customMetadata: { runId, generatedAt, sha256: sourceHash },
@@ -163,8 +196,9 @@ async function refreshCatalog(env, trigger) {
       httpMetadata: { contentType: 'application/json' },
       customMetadata: { runId, generatedAt, sha256: sourceHash },
     });
-    await env.CATALOG_BUCKET.put(REPORT_KEY(runId), jsonText, {
+    await env.CATALOG_BUCKET.put(REPORT_KEY(runId), reportText, {
       httpMetadata: { contentType: 'application/json' },
+      customMetadata: { runId, generatedAt, kind: 'recon-report' },
     });
 
     const finishedAt = new Date().toISOString();
@@ -189,11 +223,14 @@ async function refreshCatalog(env, trigger) {
       runId,
       generatedAt,
       exportKey: EXPORT_KEY,
-      sourceKeys: [cameraDbKey, lensDbKey],
+      reportKey: REPORT_KEY(runId),
+      sourceKeys: [cameraDbKey, lensDbKey, lensfunKey],
       counts: {
         cameras: catalog.cameras.length,
         lenses: catalog.lenses.length,
         bindings: catalog.bindings.length,
+        mergedCameraDuplicates: catalog.stats.mergedCameraDuplicates,
+        mergedLensDuplicates: catalog.stats.mergedLensDuplicates,
       },
     };
   } catch (error) {
@@ -203,6 +240,22 @@ async function refreshCatalog(env, trigger) {
       .bind(String(error?.stack ?? error?.message ?? error), new Date().toISOString(), runId)
       .run();
     return { ok: false, runId, error: error.message ?? String(error) };
+  }
+}
+
+async function fetchOptionalLensfun() {
+  try {
+    return { ...(await fetchLensfun()), status: 'available' };
+  } catch (error) {
+    return {
+      source: 'lensfun',
+      url: 'https://github.com/lensfun/lensfun/tree/master/data/db',
+      fetchedAt: new Date().toISOString(),
+      records: [],
+      status: 'unavailable',
+      error: error.message ?? String(error),
+      text: JSON.stringify({ error: error.message ?? String(error) }),
+    };
   }
 }
 

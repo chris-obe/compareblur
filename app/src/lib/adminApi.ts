@@ -41,6 +41,39 @@ export interface CatalogAdminStatus {
   export?: CatalogExportStatus | null;
 }
 
+export interface CatalogSourceRef {
+  id: string;
+  recordId?: string;
+  url?: string;
+  license?: string;
+  fetchedAt?: string;
+  confidence?: number;
+  fields?: string[];
+}
+
+export interface CatalogExportRecord {
+  id: string;
+  maker?: string;
+  name?: string;
+  source?: string;
+  sourceType?: 'external' | 'curated' | 'derived';
+  sources?: CatalogSourceRef[];
+  [key: string]: unknown;
+}
+
+export interface CatalogLatestExport {
+  generatedAt?: string;
+  runId?: string;
+  sources?: Array<Record<string, unknown>>;
+  cameras?: CatalogExportRecord[];
+  lenses?: CatalogExportRecord[];
+  bindings?: Array<Record<string, unknown>>;
+  compact?: Record<string, unknown>;
+  stats?: Record<string, unknown>;
+  reconReport?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
 export interface CatalogRefreshResult {
   ok: boolean;
   runId?: string;
@@ -174,6 +207,10 @@ async function adminFetchFrom<T>(url: string, init: RequestInit = {}, accessToke
 
 export function getCatalogAdminStatus(accessToken?: string): Promise<CatalogAdminStatus> {
   return adminFetch<CatalogAdminStatus>('/status', undefined, accessToken);
+}
+
+export function getCatalogLatestExport(accessToken?: string): Promise<CatalogLatestExport> {
+  return adminFetch<CatalogLatestExport>('/latest', undefined, accessToken);
 }
 
 export function updateCatalogAdminSettings(

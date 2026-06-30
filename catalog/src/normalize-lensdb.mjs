@@ -21,14 +21,14 @@ const THIRD_PARTY = new Set([
   'Cosina', 'Venus Optics', 'Lensbaby',
 ]);
 
-export function normalizeLensDbRecords(records) {
+export function normalizeLensDbRecords(records, sourceMeta = {}) {
   return records
-    .map(toLens)
+    .map((record) => toLens(record, sourceMeta))
     .filter((lens) => lens.mounts.length > 0 && lens.coversFormatIds.length > 0)
     .sort(byMakerName);
 }
 
-function toLens(record) {
+function toLens(record, sourceMeta) {
   const mounts = record.mounts.map((mount) => MOUNT_MAP[mount]).filter(Boolean);
   const price =
     record.priceUSD != null || record.priceMSRPUSD != null
@@ -38,6 +38,16 @@ function toLens(record) {
   const apTele = Number(record.apertureMaxTele ?? record.apertureMaxWide);
   const focalMin = Number(record.focalMin);
   const focalMax = Number(record.focalMax);
+
+  const source = sourceRef({
+    id: 'lens-db',
+    recordId: record.id,
+    url: record.productUrl ?? sourceMeta.url,
+    license: sourceMeta.license ?? 'CC BY-NC-SA 4.0',
+    fetchedAt: sourceMeta.fetchedAt,
+    confidence: 0.9,
+    fields: ['identity', 'mounts', 'coverage', 'focal', 'aperture', 'price'],
+  });
 
   return {
     id: record.id,
@@ -54,7 +64,7 @@ function toLens(record) {
     thirdParty: THIRD_PARTY.has(record.brand),
     aperturePoints: aperturePoints(focalMin, focalMax, apWide, apTele),
     price,
-    source: 'lens-db',
+    ...externalProvenance(source),
   };
 }
 
@@ -70,3 +80,4 @@ function aperturePoints(focalMin, focalMax, apWide, apTele) {
 function byMakerName(a, b) {
   return a.maker.localeCompare(b.maker) || a.name.localeCompare(b.name);
 }
+import { externalProvenance, sourceRef } from './provenance.mjs';
