@@ -6,6 +6,8 @@ import {
   type Camera,
   type CatalogLens,
 } from './gear';
+import { isPhoneMake } from './devices';
+import { canonicalGalleryFormat } from './galleryFormat';
 import type { Format } from './engine';
 
 export type MetadataConfidence = 'exact' | 'compatible' | 'none';
@@ -22,6 +24,9 @@ export interface GalleryMetadataSuggestion {
   lensConfidence: MetadataConfidence;
   focal: number;
   aperture: number;
+  shutterSpeed?: string;
+  iso?: number;
+  capturedAt?: string;
   width?: number;
   height?: number;
   source: {
@@ -32,6 +37,11 @@ export interface GalleryMetadataSuggestion {
       focal?: number;
       focal35?: number;
       aperture?: number;
+      shutterSpeed?: string;
+      iso?: number;
+      capturedAt?: string;
+      detectedFormatId?: string;
+      detectedFormatName?: string;
       guessedFormat: boolean;
     };
     cameraMatch?: {
@@ -63,7 +73,10 @@ export async function suggestGalleryMetadata(
 
   const camera = cameraMatch.item;
   const lens = lensMatch.item;
-  const format = camera ? cameraFormat(camera) : exif.format;
+  const detectedFormat = camera ? cameraFormat(camera) : exif.format;
+  const format = canonicalGalleryFormat(detectedFormat, {
+    preferredFamily: isPhoneMake(exif.make) ? 'phone' : undefined,
+  });
   const formatId = format.id;
 
   return {
@@ -78,6 +91,9 @@ export async function suggestGalleryMetadata(
     lensConfidence: lensMatch.confidence,
     focal,
     aperture,
+    shutterSpeed: exif.shutterSpeed,
+    iso: exif.iso,
+    capturedAt: exif.capturedAt,
     width: exif.width,
     height: exif.height,
     source: {
@@ -88,6 +104,11 @@ export async function suggestGalleryMetadata(
         focal: exif.focal,
         focal35: exif.focal35,
         aperture: exif.aperture,
+        shutterSpeed: exif.shutterSpeed,
+        iso: exif.iso,
+        capturedAt: exif.capturedAt,
+        detectedFormatId: detectedFormat.id,
+        detectedFormatName: detectedFormat.name,
         guessedFormat: exif.guessedFormat,
       },
       cameraMatch: camera

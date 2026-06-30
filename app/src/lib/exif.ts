@@ -24,6 +24,12 @@ export async function extractExif(file: File): Promise<ExtractedExif> {
         'FocalLengthIn35mmFormat',
         'FNumber',
         'ApertureValue',
+        'ExposureTime',
+        'ShutterSpeedValue',
+        'ISO',
+        'ISOSpeedRatings',
+        'DateTimeOriginal',
+        'CreateDate',
         'Make',
         'Model',
         'LensModel',
@@ -45,6 +51,9 @@ export async function extractExif(file: File): Promise<ExtractedExif> {
   const focal = num(raw.FocalLength);
   const focal35 = num(raw.FocalLengthIn35mmFormat);
   const aperture = num(raw.FNumber) ?? num(raw.ApertureValue);
+  const shutterSpeed = shutterText(raw.ExposureTime) ?? shutterFromApex(num(raw.ShutterSpeedValue));
+  const iso = num(raw.ISO) ?? num(raw.ISOSpeedRatings);
+  const capturedAt = dateText(raw.DateTimeOriginal) ?? dateText(raw.CreateDate);
   const make = str(raw.Make);
   const model = str(raw.Model);
   const imgW = num(raw.ExifImageWidth);
@@ -95,6 +104,9 @@ export async function extractExif(file: File): Promise<ExtractedExif> {
     focal,
     focal35,
     aperture,
+    shutterSpeed,
+    iso,
+    capturedAt,
     make,
     model,
     lensModel: str(raw.LensModel),
@@ -103,4 +115,22 @@ export async function extractExif(file: File): Promise<ExtractedExif> {
     guessedFormat,
     format,
   };
+}
+
+function shutterText(value: unknown): string | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return undefined;
+  if (value >= 1) return `${Math.round(value * 10) / 10}s`;
+  const denominator = Math.round(1 / value);
+  return `1/${denominator}`;
+}
+
+function shutterFromApex(value: number | undefined): string | undefined {
+  if (value == null) return undefined;
+  return shutterText(1 / 2 ** value);
+}
+
+function dateText(value: unknown): string | undefined {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString();
+  if (typeof value === 'string' && value.trim()) return value.trim();
+  return undefined;
 }

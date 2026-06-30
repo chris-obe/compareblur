@@ -47,6 +47,9 @@ interface UploadFields {
   focal: string;
   aperture: string;
   subjectPreset: string;
+  shutterSpeed: string;
+  iso: string;
+  capturedAt: string;
   tags: string[];
   status: GalleryStatus;
   notes: string;
@@ -64,6 +67,9 @@ const INITIAL_FIELDS: UploadFields = {
   focal: '50',
   aperture: '1.8',
   subjectPreset: '',
+  shutterSpeed: '',
+  iso: '',
+  capturedAt: '',
   tags: [],
   status: 'approved',
   notes: '',
@@ -187,6 +193,9 @@ export function GalleryAdmin({ accessToken, photos, loading, loaded, error, tags
       focal: formatNumber(next.focal),
       aperture: formatNumber(next.aperture),
       subjectPreset: '',
+      shutterSpeed: next.shutterSpeed ?? '',
+      iso: next.iso != null ? String(next.iso) : '',
+      capturedAt: dateInputValue(next.capturedAt),
       tags: suggestedTags(next, activeTags),
       status: 'approved',
       notes: '',
@@ -262,6 +271,9 @@ export function GalleryAdmin({ accessToken, photos, loading, loaded, error, tags
         focal: numberOrFallback(editing.fields.focal, 50),
         aperture: numberOrFallback(editing.fields.aperture, 1.8),
         subjectPreset: editing.fields.subjectPreset,
+        shutterSpeed: editing.fields.shutterSpeed || null,
+        iso: numberOrOptional(editing.fields.iso),
+        capturedAt: editing.fields.capturedAt || null,
         tags: editing.fields.tags,
         notes: editing.fields.notes,
       }, accessToken);
@@ -315,6 +327,9 @@ export function GalleryAdmin({ accessToken, photos, loading, loaded, error, tags
     form.set('focal', fields.focal);
     form.set('aperture', fields.aperture);
     form.set('subjectPreset', fields.subjectPreset);
+    form.set('shutterSpeed', fields.shutterSpeed);
+    form.set('iso', fields.iso);
+    form.set('capturedAt', fields.capturedAt);
     form.set('tags', fields.tags.join(','));
     form.set('status', fields.status);
     form.set('width', String(image.width));
@@ -469,6 +484,9 @@ export function GalleryAdmin({ accessToken, photos, loading, loaded, error, tags
               marker={focalFromExif ? 'EXIF' : undefined}
             />
             <Field className="lg:col-span-1" label="Aperture" value={fields.aperture} onChange={(value) => setField('aperture', value)} />
+            <Field className="lg:col-span-1" label="Shutter" value={fields.shutterSpeed} onChange={(value) => setField('shutterSpeed', value)} />
+            <Field className="lg:col-span-1" label="ISO" value={fields.iso} onChange={(value) => setField('iso', value)} />
+            <Field className="lg:col-span-2" label="Captured" value={fields.capturedAt} onChange={(value) => setField('capturedAt', value)} />
             <SubjectPresetField
               className="lg:col-span-2"
               value={fields.subjectPreset}
@@ -531,6 +549,9 @@ export function GalleryAdmin({ accessToken, photos, loading, loaded, error, tags
             <FormatField className="lg:col-span-1" value={editing.fields.formatId} onChange={(value) => setEditField('formatId', value)} />
             <Field className="lg:col-span-1" label="Focal length" value={editing.fields.focal} onChange={(value) => setEditField('focal', value)} />
             <Field className="lg:col-span-1" label="Aperture" value={editing.fields.aperture} onChange={(value) => setEditField('aperture', value)} />
+            <Field className="lg:col-span-1" label="Shutter" value={editing.fields.shutterSpeed} onChange={(value) => setEditField('shutterSpeed', value)} />
+            <Field className="lg:col-span-1" label="ISO" value={editing.fields.iso} onChange={(value) => setEditField('iso', value)} />
+            <Field className="lg:col-span-2" label="Captured" value={editing.fields.capturedAt} onChange={(value) => setEditField('capturedAt', value)} />
             <SubjectPresetField
               className="lg:col-span-2"
               value={editing.fields.subjectPreset}
@@ -680,6 +701,9 @@ function fieldsFromPhoto(photo: AdminGalleryPhoto): UploadFields {
     focal: String(photo.focal),
     aperture: String(photo.aperture),
     subjectPreset: photo.subjectPreset ?? DEFAULT_SUBJECT_DISTANCE_PRESET_ID,
+    shutterSpeed: photo.shutterSpeed ?? '',
+    iso: photo.iso != null ? String(photo.iso) : '',
+    capturedAt: dateInputValue(photo.capturedAt),
     tags: photo.tags,
     status: photo.status,
     notes: photo.notes ?? '',
@@ -691,8 +715,21 @@ function numberOrFallback(value: string, fallback: number): number {
   return Number.isFinite(number) ? number : fallback;
 }
 
+function numberOrOptional(value: string): number | null {
+  if (!value.trim()) return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
 function formatNumber(value: number): string {
   return String(Math.round(value * 10) / 10);
+}
+
+function dateInputValue(value?: string | null): string {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toISOString().slice(0, 10);
 }
 
 function normalizedFormatId(value: string): string {

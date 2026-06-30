@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useAuth0 } from '@auth0/auth0-react';
-import { Heart, ImagePlus, Palette, RefreshCw, Save, Shield, User } from 'lucide-react';
+import { Code2, FolderOpen, Heart, ImagePlus, Palette, RefreshCw, Save, Shield, User } from 'lucide-react';
 import { useAdminAccess } from '../auth/AdminAccessProvider';
 import { userTokenParams } from '../auth/config';
 import { useTheme } from '../store/ThemeProvider';
+import { AccountAlbumsManager } from '../components/albums/AccountAlbumsManager';
+import { BlogEmbedManager } from '../components/settings/BlogEmbedManager';
 import { GalleryTagsManager } from '../components/settings/GalleryTagsManager';
 import { Button } from '../components/ui/Button';
 import { Chip } from '../components/ui/Chip';
@@ -14,16 +16,24 @@ import {
   type AccountSummary,
 } from '../lib/accountApi';
 
-type SettingsSection = 'profile' | 'tags' | 'appearance';
+type SettingsSection = 'profile' | 'albums' | 'embeds' | 'tags' | 'appearance';
 
 const SECTIONS: Array<{ id: SettingsSection; label: string }> = [
   { id: 'profile', label: 'Profile' },
+  { id: 'albums', label: 'Albums' },
+  { id: 'embeds', label: 'Blog embeds' },
   { id: 'tags', label: 'Tags' },
   { id: 'appearance', label: 'Appearance' },
 ];
 
 export function Settings() {
+  const { isAdmin } = useAdminAccess();
   const [section, setSection] = useState<SettingsSection>('profile');
+  const sections = isAdmin ? SECTIONS : SECTIONS.filter((item) => item.id !== 'embeds');
+
+  useEffect(() => {
+    if (!isAdmin && section === 'embeds') setSection('profile');
+  }, [isAdmin, section]);
 
   return (
     <div className="min-h-full">
@@ -35,7 +45,7 @@ export function Settings() {
       <div className="grid min-h-[calc(100vh-9.5rem)] grid-cols-1 lg:grid-cols-[13rem_minmax(0,1fr)]">
         <nav className="border-b border-line p-3 lg:border-b-0 lg:border-r">
           <div className="flex gap-2 overflow-x-auto lg:flex-col lg:overflow-visible">
-            {SECTIONS.map((item) => (
+            {sections.map((item) => (
               <button
                 key={item.id}
                 type="button"
@@ -55,11 +65,49 @@ export function Settings() {
 
         <section className="min-w-0 p-6">
           {section === 'profile' && <ProfileSection />}
+          {section === 'albums' && <AlbumsSection />}
+          {section === 'embeds' && <EmbedsSection />}
           {section === 'tags' && <TagsSection />}
           {section === 'appearance' && <AppearanceSection />}
         </section>
       </div>
     </div>
+  );
+}
+
+function AlbumsSection() {
+  return (
+    <>
+      <SectionTitle icon={FolderOpen} title="Albums" />
+      <AccountAlbumsManager mode="settings" />
+    </>
+  );
+}
+
+function EmbedsSection() {
+  const { isAdmin, status } = useAdminAccess();
+  if (!isAdmin) {
+    return (
+      <div className="w-full max-w-md border border-line p-5">
+        <div className="flex items-center gap-3">
+          <Shield size={18} strokeWidth={1.5} />
+          <div>
+            <div className="text-sm font-bold tracking-tight">Admins only</div>
+            <div className="mt-1 text-xs text-muted">
+              {status === 'anonymous'
+                ? 'Sign in with an admin account to manage blog embeds.'
+                : 'Your account does not have permission to manage blog embeds.'}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <>
+      <SectionTitle icon={Code2} title="Blog embeds" />
+      <BlogEmbedManager />
+    </>
   );
 }
 

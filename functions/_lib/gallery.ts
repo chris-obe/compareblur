@@ -28,6 +28,9 @@ export interface GalleryRow {
   aperture: number;
   subject_preset?: string | null;
   subject_width_m?: number | null;
+  shutter_speed?: string | null;
+  iso?: number | null;
+  captured_at?: string | null;
   tags_json: string;
   metadata_source_json: string | null;
   submitted_by: string | null;
@@ -64,6 +67,9 @@ export function photoFromRow(row: GalleryRow, admin = false, reactionCounts?: Ga
     aperture: row.aperture,
     subjectPreset: row.subject_preset ?? 'full-body',
     subjectWidthM: row.subject_width_m ?? 2,
+    shutterSpeed: row.shutter_speed ?? undefined,
+    iso: row.iso ?? undefined,
+    capturedAt: row.captured_at ?? undefined,
     tags: parseTags(row.tags_json),
     reactionCounts,
     metadataSource: admin ? parseMetadataSource(row.metadata_source_json) : undefined,

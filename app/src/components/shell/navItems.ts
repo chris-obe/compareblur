@@ -1,4 +1,4 @@
-import { Images, GitCompare, Aperture, Lightbulb, Shield, Settings } from 'lucide-react';
+import { Images, GitCompare, Aperture, FolderOpen, Lightbulb, Shield, Settings } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 export interface NavItemData {
@@ -12,6 +12,7 @@ export interface NavItemData {
 // Primary destinations (top of the sidebar / left of the bottom bar).
 export const PRIMARY_NAV: NavItemData[] = [
   { to: '/', label: 'Gallery', icon: Images, end: true },
+  { to: '/albums', label: 'Albums', icon: FolderOpen },
   { to: '/compare', label: 'Compare', icon: GitCompare },
   { to: '/kit', label: 'My Kit', icon: Aperture },
   { to: '/suggestions', label: 'Suggestions', icon: Lightbulb },

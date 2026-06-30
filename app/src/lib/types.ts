@@ -48,6 +48,9 @@ export interface GalleryItem {
   aperture: number; // f-number
   subjectPreset?: string;
   subjectWidthM?: number;
+  shutterSpeed?: string | null;
+  iso?: number | null;
+  capturedAt?: string | null;
   tags: string[];
   reactionCounts?: ReactionCounts;
 }
@@ -56,6 +59,9 @@ export interface ExtractedExif {
   focal?: number; // FocalLength (actual)
   focal35?: number; // FocalLengthIn35mmFormat
   aperture?: number; // FNumber
+  shutterSpeed?: string;
+  iso?: number;
+  capturedAt?: string;
   make?: string;
   model?: string;
   lensModel?: string;
@@ -73,11 +79,17 @@ export interface ViewEntry {
   title: string;
   metaLine: string;
   src: string;
+  camera?: string;
+  lens?: string;
+  formatId?: string;
   format: Format;
   focal: number;
   aperture: number;
   subjectPreset?: string;
   subjectWidthM?: number;
+  shutterSpeed?: string | null;
+  iso?: number | null;
+  capturedAt?: string | null;
   guessed: boolean;
   morph: boolean;
 }

@@ -62,6 +62,9 @@ export const onRequestPatch: PagesFunction<Env> = async ({ env, params, request 
     aperture: numberValue(body.aperture, current.aperture),
     subjectPreset,
     subjectWidthM,
+    shutterSpeed: body.shutterSpeed === undefined ? current.shutter_speed ?? null : nullableStringValue(body.shutterSpeed, null),
+    iso: body.iso === undefined ? current.iso ?? null : nullableNumberValue(body.iso, null),
+    capturedAt: body.capturedAt === undefined ? current.captured_at ?? null : nullableStringValue(body.capturedAt, null),
     tags,
     metadataSource: body.metadataSource == null
       ? current.metadata_source_json
@@ -75,7 +78,8 @@ export const onRequestPatch: PagesFunction<Env> = async ({ env, params, request 
     `UPDATE gallery_photos
      SET title = ?, author = ?, status = ?, format_id = ?, camera = ?, camera_catalog_id = ?,
          lens = ?, lens_catalog_id = ?, focal = ?, aperture = ?, tags_json = ?,
-         subject_preset = ?, subject_width_m = ?, metadata_source_json = ?, notes = ?, updated_at = ?, published_at = ?
+         subject_preset = ?, subject_width_m = ?, shutter_speed = ?, iso = ?, captured_at = ?,
+         metadata_source_json = ?, notes = ?, updated_at = ?, published_at = ?
      WHERE id = ?`,
   )
     .bind(
@@ -92,6 +96,9 @@ export const onRequestPatch: PagesFunction<Env> = async ({ env, params, request 
       JSON.stringify(next.tags),
       next.subjectPreset,
       next.subjectWidthM,
+      next.shutterSpeed,
+      next.iso,
+      next.capturedAt,
       next.metadataSource,
       next.notes,
       now,
@@ -129,6 +136,12 @@ function nullableStringValue(value: unknown, fallback: string | null) {
   if (typeof value !== 'string') return fallback;
   const trimmed = value.trim();
   return trimmed ? trimmed : null;
+}
+
+function nullableNumberValue(value: unknown, fallback: number | null) {
+  if (value == null || value === '') return fallback;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
 }
 
 function numberValue(value: unknown, fallback: number) {

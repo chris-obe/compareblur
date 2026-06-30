@@ -1,48 +1,44 @@
+import { adminAuthError, requireAuth0User } from '../../../../_lib/admin';
+import { galleryFormatIdOrDefault } from '../../../../_lib/formats';
 import {
   cleanId,
+  findPhoto,
   json,
   normalizeTags,
   photoFromRow,
   type GalleryEnv,
   type GalleryRow,
-} from '../../../_lib/gallery';
-import { adminAuthError, requireAdmin } from '../../../_lib/admin';
-import { galleryFormatIdOrDefault } from '../../../_lib/formats';
-import { findMissingGalleryTags } from '../../../_lib/galleryTags';
-import { subjectPresetValue, subjectWidthForPreset } from '../../../_lib/subjectDistance';
+} from '../../../../_lib/gallery';
+import { findMissingGalleryTags } from '../../../../_lib/galleryTags';
+import { subjectPresetValue, subjectWidthForPreset } from '../../../../_lib/subjectDistance';
 
 type Env = GalleryEnv & {
   AUTH0_AUDIENCE?: string;
   AUTH0_DOMAIN?: string;
-  ADMIN_API_OPEN?: string;
-  ADMIN_API_TOKEN?: string;
 };
 
 const MAX_GALLERY_UPLOAD_BYTES = 1024 * 1024;
 
 export const onRequestGet: PagesFunction<Env> = async ({ env, request }) => {
   try {
-    await requireAdmin(request, env, ['admin:access']);
+    const identity = await requireAuth0User(request, env);
+    const rows = await env.GALLERY_DB.prepare(
+      `SELECT * FROM gallery_photos
+       WHERE submitted_by = ?
+       ORDER BY updated_at DESC`,
+    )
+      .bind(identity.sub)
+      .all<GalleryRow>();
+    return json({ photos: (rows.results ?? []).map((row) => photoFromRow(row, true)) });
   } catch (error) {
     return adminAuthError(error);
   }
-
-  const url = new URL(request.url);
-  const status = url.searchParams.get('status');
-  const includeStatus = status && ['draft', 'pending', 'approved', 'rejected'].includes(status);
-  const query = includeStatus
-    ? `SELECT * FROM gallery_photos WHERE status = ? ORDER BY updated_at DESC`
-    : `SELECT * FROM gallery_photos ORDER BY updated_at DESC`;
-  const statement = env.GALLERY_DB.prepare(query);
-  const rows = includeStatus ? await statement.bind(status).all<GalleryRow>() : await statement.all<GalleryRow>();
-
-  return json({ photos: (rows.results ?? []).map((row) => photoFromRow(row, true)) });
 };
 
 export const onRequestPost: PagesFunction<Env> = async ({ env, request }) => {
   let identity;
   try {
-    identity = await requireAdmin(request, env, ['admin:access']);
+    identity = await requireAuth0User(request, env);
   } catch (error) {
     return adminAuthError(error);
   }
@@ -57,46 +53,35 @@ export const onRequestPost: PagesFunction<Env> = async ({ env, request }) => {
   const title = String(form.get('title') ?? file.name).trim();
   const now = new Date().toISOString();
   const id = cleanId(String(form.get('id') ?? title)) || crypto.randomUUID();
-  const ext = extensionForFile(file);
-  const objectKey = `photos/${id}/original.${ext}`;
-  const status = String(form.get('status') ?? 'pending');
-
-  if (!['draft', 'pending', 'approved', 'rejected'].includes(status)) {
-    return json({ error: 'invalid status' }, { status: 400 });
-  }
+  if (await findPhoto(env, id)) return json({ error: 'photo id already exists' }, { status: 409 });
 
   const formatId = galleryFormatIdOrDefault(form.get('formatId'));
   if (!formatId) return json({ error: 'invalid formatId' }, { status: 400 });
+  const subjectPreset = subjectPresetValue(form.get('subjectPreset'), 'full-body');
+  if (!subjectPreset) return json({ error: 'subject distance preset is required' }, { status: 400 });
   const tags = normalizeTags(form.get('tags'));
   const missingTags = await findMissingGalleryTags(env, tags);
-  if (missingTags.length > 0) {
-    return json({ error: `Unknown gallery tag: ${missingTags.join(', ')}` }, { status: 400 });
-  }
-  const subjectPreset = subjectPresetValue(form.get('subjectPreset'));
-  if (!subjectPreset) return json({ error: 'subject distance preset is required' }, { status: 400 });
-  const subjectWidthM = subjectWidthForPreset(subjectPreset);
+  if (missingTags.length > 0) return json({ error: `Unknown gallery tag: ${missingTags.join(', ')}` }, { status: 400 });
 
+  const ext = extensionForFile(file);
+  const objectKey = `users/${cleanId(identity.sub)}/photos/${id}/original.${ext}`;
   await env.GALLERY_BUCKET.put(objectKey, file.stream(), {
     httpMetadata: { contentType: file.type || 'application/octet-stream' },
-    customMetadata: { title, uploadedAt: now },
+    customMetadata: { title, uploadedAt: now, ownerSub: identity.sub },
   });
 
-  const publishedAt = status === 'approved' ? now : null;
-  const submittedBy = stringOrNull(form.get('submittedBy')) ?? identity.sub;
   await env.GALLERY_DB.prepare(
     `INSERT INTO gallery_photos (
       id, title, author, status, object_key, content_type, width, height,
       format_id, camera, camera_catalog_id, lens, lens_catalog_id, focal, aperture,
       subject_preset, subject_width_m, shutter_speed, iso, captured_at,
-      tags_json, metadata_source_json, submitted_by,
-      notes, created_at, updated_at, published_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      tags_json, metadata_source_json, submitted_by, notes, created_at, updated_at, published_at
+    ) VALUES (?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
   )
     .bind(
       id,
       title,
       String(form.get('author') ?? '').trim(),
-      status,
       objectKey,
       file.type || 'application/octet-stream',
       numberOrNull(form.get('width')),
@@ -109,21 +94,20 @@ export const onRequestPost: PagesFunction<Env> = async ({ env, request }) => {
       numberOrDefault(form.get('focal'), 50),
       numberOrDefault(form.get('aperture'), 1.8),
       subjectPreset,
-      subjectWidthM,
+      subjectWidthForPreset(subjectPreset),
       stringOrNull(form.get('shutterSpeed')),
       numberOrNull(form.get('iso')),
       stringOrNull(form.get('capturedAt')),
       JSON.stringify(tags),
       stringOrNull(form.get('metadataSource')),
-      submittedBy,
+      identity.sub,
       String(form.get('notes') ?? ''),
       now,
       now,
-      publishedAt,
     )
     .run();
 
-  const row = await env.GALLERY_DB.prepare('SELECT * FROM gallery_photos WHERE id = ?').bind(id).first<GalleryRow>();
+  const row = await findPhoto(env, id);
   return json({ photo: row ? photoFromRow(row, true) : null }, { status: 201 });
 };
 
@@ -134,8 +118,7 @@ function numberOrNull(value: FormDataEntryValue | null) {
 }
 
 function numberOrDefault(value: FormDataEntryValue | null, fallback: number) {
-  const number = numberOrNull(value);
-  return number ?? fallback;
+  return numberOrNull(value) ?? fallback;
 }
 
 function stringOrNull(value: FormDataEntryValue | null) {
