@@ -38,4 +38,7 @@ export const DEFAULT_EMBED_TEMPLATE: EmbedTemplate = {
   visibleFields: ['camera', 'lens', 'focal', 'aperture', 'format', 'capturedAt'],
   ctaLabel: 'Open in blur',
   showEquivalent: false,
+  albumLayout: 'grid',
+  albumCount: 6,
+  albumColumns: 3,
 };

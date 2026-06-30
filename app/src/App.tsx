@@ -9,6 +9,7 @@ import { Settings } from './pages/Settings';
 import { Stub } from './pages/Stub';
 import { Admin } from './pages/Admin';
 import { EmbedPhoto } from './pages/EmbedPhoto';
+import { EmbedGallery } from './pages/EmbedGallery';
 import { Albums } from './pages/Albums';
 
 export default function App() {
@@ -47,6 +48,8 @@ export default function App() {
         }
       />
       <Route path="/embed/photo/:photoId" element={<EmbedPhoto />} />
+      <Route path="/embed/album/:albumSlug" element={<EmbedGallery mode="album" />} />
+      <Route path="/embed/photos" element={<EmbedGallery mode="set" />} />
       <Route
         path="/albums"
         element={

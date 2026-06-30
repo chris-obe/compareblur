@@ -6,6 +6,7 @@ export type EmbedDensity = 'compact' | 'comfortable';
 export type EmbedFrameStyle = 'minimal' | 'technical' | 'editorial';
 export type EmbedImageFit = 'cover' | 'contain';
 export type EmbedMetadataPlacement = 'bottom' | 'left' | 'right';
+export type EmbedAlbumLayout = 'grid' | 'carousel';
 
 export const EMBED_FIELD_IDS = [
   'camera',
@@ -33,6 +34,12 @@ export interface EmbedTemplate {
   visibleFields: EmbedFieldId[];
   ctaLabel: string;
   showEquivalent: boolean;
+  /** multi-image embed layout for album auto-select + selected-set */
+  albumLayout: EmbedAlbumLayout;
+  /** default number of frames an album auto-select embed packs */
+  albumCount: number;
+  /** columns used when albumLayout === 'grid' */
+  albumColumns: number;
 }
 
 export interface GalleryAlbumRow {
@@ -80,6 +87,9 @@ export const DEFAULT_EMBED_TEMPLATE: EmbedTemplate = {
   visibleFields: ['camera', 'lens', 'focal', 'aperture', 'format', 'capturedAt'],
   ctaLabel: 'Open in blur',
   showEquivalent: false,
+  albumLayout: 'grid',
+  albumCount: 6,
+  albumColumns: 3,
 };
 
 export function publicJson(body: unknown, maxAge = 60) {
@@ -157,6 +167,9 @@ export function normalizeEmbedTemplate(input: unknown): EmbedTemplate {
     visibleFields: visible.length > 0 ? [...new Set(visible)].slice(0, 6) : DEFAULT_EMBED_TEMPLATE.visibleFields,
     ctaLabel: stringValue(value.ctaLabel, DEFAULT_EMBED_TEMPLATE.ctaLabel).slice(0, 80),
     showEquivalent: typeof value.showEquivalent === 'boolean' ? value.showEquivalent : DEFAULT_EMBED_TEMPLATE.showEquivalent,
+    albumLayout: oneOf(value.albumLayout, ['grid', 'carousel'], DEFAULT_EMBED_TEMPLATE.albumLayout),
+    albumCount: numberInRange(value.albumCount, 1, 24, DEFAULT_EMBED_TEMPLATE.albumCount),
+    albumColumns: numberInRange(value.albumColumns, 2, 4, DEFAULT_EMBED_TEMPLATE.albumColumns),
   };
 }
 

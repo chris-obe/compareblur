@@ -12,6 +12,7 @@ import {
 import { useAuth0 } from '@auth0/auth0-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
+  Code2,
   Eye,
   Edit3,
   FolderOpen,
@@ -30,6 +31,7 @@ import {
 import { userTokenParams } from '../../auth/config';
 import {
   createAccountGalleryAlbum,
+  getPublicEmbedTemplate,
   listAccountGalleryAlbums,
   listAccountGalleryPhotos,
   publishAccountGalleryPhoto,
@@ -37,6 +39,7 @@ import {
   updateAccountGalleryPhoto,
   uploadAccountGalleryPhoto,
   type AdminGalleryPhoto,
+  type EmbedTemplate,
   type GalleryAlbum,
   type GalleryAlbumStatus,
 } from '../../lib/galleryApi';
@@ -54,6 +57,7 @@ import { useCatalog } from '../../store/CatalogProvider';
 import { useCompare, nextSystemId } from '../../store/CompareProvider';
 import { useKit } from '../../store/KitProvider';
 import { PhotoOpticsPanel } from '../gallery/PhotoOpticsPanel';
+import { EmbedCodeDialog } from '../embed/EmbedCodeDialog';
 import { PhotoLightbox } from '../lightbox/PhotoLightbox';
 import { Button } from '../ui/Button';
 
@@ -103,6 +107,11 @@ interface AlbumDisplayPreferences {
   defaultAlbumMode: AlbumDefaultMode;
 }
 
+type EmbedRequest =
+  | { mode: 'photo'; photo: { id: string; title: string }; albumSlug?: string }
+  | { mode: 'selection'; photoIds: string[] }
+  | { mode: 'album'; albumSlug: string; albumTitle: string };
+
 const ALBUM_PREFS_KEY = 'blur.albumDisplayPreferences';
 const DEFAULT_ALBUM_PREFS: AlbumDisplayPreferences = {
   albumSubtitle: 'updated',
@@ -130,6 +139,8 @@ export function AccountAlbumsManager({ mode, routeAlbumSlug }: Props) {
   const [preferences, setPreferences] = useState<AlbumDisplayPreferences>(readAlbumPreferences);
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [viewPhotoId, setViewPhotoId] = useState<string | null>(null);
+  const [embedTemplate, setEmbedTemplate] = useState<EmbedTemplate | null>(null);
+  const [embedRequest, setEmbedRequest] = useState<EmbedRequest | null>(null);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<ImageProcessingProgress | null>(null);
@@ -157,6 +168,13 @@ export function AccountAlbumsManager({ mode, routeAlbumSlug }: Props) {
     return photos;
   }, [photos, selectedAlbum]);
   const lightboxIndex = viewPhotoId ? lightboxPhotos.findIndex((photo) => photo.id === viewPhotoId) : -1;
+  const selectedApprovedPhotoIds = useMemo(
+    () => photos
+      .filter((photo) => selectedPhotoIds.has(photo.id) && photo.status === 'approved')
+      .map((photo) => photo.id),
+    [photos, selectedPhotoIds],
+  );
+  const embedReady = !!embedTemplate;
 
   const getToken = async () => getAccessTokenSilently({ authorizationParams: userTokenParams });
 
@@ -206,6 +224,20 @@ export function AccountAlbumsManager({ mode, routeAlbumSlug }: Props) {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated]);
+
+  useEffect(() => {
+    let cancelled = false;
+    getPublicEmbedTemplate()
+      .then((template) => {
+        if (!cancelled) setEmbedTemplate(template);
+      })
+      .catch(() => {
+        if (!cancelled) setEmbedTemplate(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     window.localStorage.setItem('blur.albumPageSurface', pageSurface);
@@ -400,6 +432,16 @@ export function AccountAlbumsManager({ mode, routeAlbumSlug }: Props) {
     }
   };
 
+  const openSelectionEmbed = () => {
+    if (selectedApprovedPhotoIds.length === 0) return;
+    setEmbedRequest({ mode: 'selection', photoIds: selectedApprovedPhotoIds });
+  };
+
+  const openAlbumEmbed = (album: GalleryAlbum) => {
+    if (album.status !== 'published') return;
+    setEmbedRequest({ mode: 'album', albumSlug: album.slug, albumTitle: album.title });
+  };
+
   if (!isAuthenticated) {
     return (
       <div className="border border-line p-6">
@@ -457,8 +499,10 @@ export function AccountAlbumsManager({ mode, routeAlbumSlug }: Props) {
           pageSurface={pageSurface}
           preferences={preferences}
           selectedPhotoIds={selectedPhotoIds}
+          selectedApprovedCount={selectedApprovedPhotoIds.length}
           accessToken={accessToken}
           busy={busy}
+          embedReady={embedReady}
           error={error}
           manager={manager}
           selectAlbum={selectAlbum}
@@ -469,6 +513,8 @@ export function AccountAlbumsManager({ mode, routeAlbumSlug }: Props) {
           setSelectedPhotoIds={setSelectedPhotoIds}
           setViewPhotoId={setViewPhotoId}
           publishSelected={publishSelected}
+          onEmbedSelected={openSelectionEmbed}
+          onEmbedAlbum={openAlbumEmbed}
           openAlbum={(album) => navigate(`/albums/${encodeURIComponent(album.slug)}`)}
           openManage={() => setSearchParams({ mode: 'edit' })}
         />
@@ -500,8 +546,26 @@ export function AccountAlbumsManager({ mode, routeAlbumSlug }: Props) {
                 else navigate('/albums?mode=edit');
               }}
               onPublish={() => void publishOne(photo.id)}
+              onEmbed={() => setEmbedRequest({
+                mode: 'photo',
+                photo: { id: photo.id, title: photo.title },
+                albumSlug: selectedAlbum?.slug,
+              })}
+              embedReady={embedReady}
             />
           )}
+        />
+      )}
+
+      {embedTemplate && embedRequest && (
+        <EmbedCodeDialog
+          mode={embedRequest.mode}
+          template={embedTemplate}
+          onClose={() => setEmbedRequest(null)}
+          photo={embedRequest.mode === 'photo' ? embedRequest.photo : undefined}
+          albumSlug={embedRequest.mode === 'photo' ? embedRequest.albumSlug : embedRequest.mode === 'album' ? embedRequest.albumSlug : undefined}
+          albumTitle={embedRequest.mode === 'album' ? embedRequest.albumTitle : undefined}
+          photoIds={embedRequest.mode === 'selection' ? embedRequest.photoIds : undefined}
         />
       )}
     </section>
@@ -812,8 +876,10 @@ function AlbumViewer({
   pageSurface,
   preferences,
   selectedPhotoIds,
+  selectedApprovedCount,
   accessToken,
   busy,
+  embedReady,
   error,
   manager,
   selectAlbum,
@@ -824,6 +890,8 @@ function AlbumViewer({
   setSelectedPhotoIds,
   setViewPhotoId,
   publishSelected,
+  onEmbedSelected,
+  onEmbedAlbum,
   openAlbum,
   openManage,
 }: {
@@ -835,8 +903,10 @@ function AlbumViewer({
   pageSurface: 'albums' | 'all';
   preferences: AlbumDisplayPreferences;
   selectedPhotoIds: Set<string>;
+  selectedApprovedCount: number;
   accessToken: string | null;
   busy: boolean;
+  embedReady: boolean;
   error: string | null;
   manager: ReactNode;
   selectAlbum: (album: GalleryAlbum | null) => void;
@@ -847,6 +917,8 @@ function AlbumViewer({
   setSelectedPhotoIds: Dispatch<SetStateAction<Set<string>>>;
   setViewPhotoId: Dispatch<SetStateAction<string | null>>;
   publishSelected: () => Promise<void>;
+  onEmbedSelected: () => void;
+  onEmbedAlbum: (album: GalleryAlbum) => void;
   openAlbum: (album: GalleryAlbum) => void;
   openManage: () => void;
 }) {
@@ -885,7 +957,9 @@ function AlbumViewer({
           surface={pageSurface}
           detailMode={detailMode}
           selectedCount={selectedPhotoIds.size}
+          selectedApprovedCount={selectedApprovedCount}
           visibleCount={selectedAlbumPhotos.length}
+          embedReady={embedReady}
           onSurface={(surface) => {
             setPageSurface(surface);
             if (surface === 'all') selectAlbum(null);
@@ -894,6 +968,7 @@ function AlbumViewer({
           onNew={startNewAlbum}
           onMode={setDetailMode}
           onSubmit={() => void publishSelected()}
+          onEmbedSelected={onEmbedSelected}
           busy={busy}
           inAlbum
         />
@@ -904,10 +979,20 @@ function AlbumViewer({
             <h3 className="truncate text-3xl font-bold tracking-tight">{selectedAlbum.title}</h3>
             {selectedAlbum.description && <p className="mt-2 max-w-2xl truncate text-sm text-muted">{selectedAlbum.description}</p>}
           </div>
-          <Button onClick={openManage}>
-            <Edit3 size={14} strokeWidth={1.5} />
-            Edit
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              onClick={() => onEmbedAlbum(selectedAlbum)}
+              disabled={!embedReady || selectedAlbum.status !== 'published'}
+              title={selectedAlbum.status === 'published' ? 'Copy album iframe code' : 'Publish album to embed'}
+            >
+              <Code2 size={14} strokeWidth={1.5} />
+              Embed album
+            </Button>
+            <Button onClick={openManage}>
+              <Edit3 size={14} strokeWidth={1.5} />
+              Edit
+            </Button>
+          </div>
         </div>
 
         <PhotoGrid
@@ -931,12 +1016,15 @@ function AlbumViewer({
           surface={pageSurface}
           detailMode={detailMode}
           selectedCount={selectedPhotoIds.size}
+          selectedApprovedCount={selectedApprovedCount}
           visibleCount={photos.length}
+          embedReady={embedReady}
           onSurface={setPageSurface}
           onReload={() => void reload()}
           onNew={startNewAlbum}
           onMode={setDetailMode}
           onSubmit={() => void publishSelected()}
+          onEmbedSelected={onEmbedSelected}
           busy={busy}
         />
         <div className="columns-2 gap-3 sm:columns-3 xl:columns-4">
@@ -984,12 +1072,15 @@ function AlbumViewer({
         surface={pageSurface}
         detailMode={detailMode}
         selectedCount={selectedPhotoIds.size}
+        selectedApprovedCount={selectedApprovedCount}
         visibleCount={albums.length}
+        embedReady={embedReady}
         onSurface={setPageSurface}
         onReload={() => void reload()}
         onNew={startNewAlbum}
         onMode={setDetailMode}
         onSubmit={() => void publishSelected()}
+        onEmbedSelected={onEmbedSelected}
         busy={busy}
       />
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -1023,27 +1114,36 @@ function AlbumActionBar({
   surface,
   detailMode,
   selectedCount,
+  selectedApprovedCount,
   visibleCount,
   busy,
+  embedReady,
   inAlbum = false,
   onSurface,
   onMode,
   onReload,
   onNew,
   onSubmit,
+  onEmbedSelected,
 }: {
   surface: 'albums' | 'all';
   detailMode: AlbumDefaultMode;
   selectedCount: number;
+  selectedApprovedCount: number;
   visibleCount: number;
   busy: boolean;
+  embedReady: boolean;
   inAlbum?: boolean;
   onSurface: (surface: 'albums' | 'all') => void;
   onMode: (mode: AlbumDefaultMode) => void;
   onReload: () => void;
   onNew: () => void;
   onSubmit: () => void;
+  onEmbedSelected: () => void;
 }) {
+  const embedSelectedLabel = selectedCount > 0 && selectedApprovedCount === 0
+    ? 'No approved photos selected'
+    : 'Embed selected';
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 border border-line px-3 py-2">
       <div className="text-xs text-muted">
@@ -1075,6 +1175,14 @@ function AlbumActionBar({
         </ActionIconButton>
         <ActionIconButton label="New album" onClick={onNew}>
           <Plus size={14} strokeWidth={1.5} />
+        </ActionIconButton>
+        <ActionIconButton
+          label={embedSelectedLabel}
+          onClick={onEmbedSelected}
+          disabled={!embedReady || selectedApprovedCount === 0}
+          active={selectedApprovedCount > 0}
+        >
+          <Code2 size={14} strokeWidth={1.5} />
         </ActionIconButton>
         <ActionIconButton label="Submit selected" onClick={onSubmit} disabled={busy || selectedCount === 0} active={selectedCount > 0}>
           <Send size={14} strokeWidth={1.5} />
@@ -1404,13 +1512,17 @@ function PhotoBulkTable({
 function AccountLightboxInfo({
   photo,
   busy,
+  embedReady,
   onEdit,
   onPublish,
+  onEmbed,
 }: {
   photo: AdminGalleryPhoto;
   busy: boolean;
+  embedReady: boolean;
   onEdit: () => void;
   onPublish: () => void;
+  onEmbed: () => void;
 }) {
   const navigate = useNavigate();
   const { cameras, lenses } = useKit();
@@ -1451,6 +1563,15 @@ function AccountLightboxInfo({
       />
 
       <div className="space-y-2">
+        <Button
+          className="w-full"
+          onClick={onEmbed}
+          disabled={!embedReady || photo.status !== 'approved'}
+          title={photo.status === 'approved' ? 'Copy iframe code' : 'Publish to embed'}
+        >
+          <Code2 size={14} strokeWidth={1.5} />
+          Copy embed code
+        </Button>
         <Button variant="solid" className="w-full" onClick={onPublish} disabled={busy || photo.status === 'approved'}>
           <Send size={14} strokeWidth={1.5} />
           Submit to public gallery

@@ -19,6 +19,7 @@ import {
   MAX_EMBED_LONG_EDGE,
   MIN_EMBED_LONG_EDGE,
 } from '../../lib/embedTemplate';
+import { clampEmbedLongEdge, iframeSnippet, photoEmbedUrl } from '../../lib/embedSnippet';
 import { GALLERY_FORMAT_OPTIONS, formatOptionLabel } from '../../lib/galleryFormat';
 import {
   getAdminEmbedSettings,
@@ -30,6 +31,7 @@ import {
   type EmbedTemplate,
   type GalleryAlbum,
 } from '../../lib/galleryApi';
+import { EmbedGalleryCard } from '../embed/EmbedGalleryCard';
 import { PhotoEmbedCard } from '../embed/PhotoEmbedCard';
 import { Button } from '../ui/Button';
 
@@ -55,8 +57,17 @@ export function BlogEmbedManager() {
   const previewPhoto = approvedPhotos.find((photo) => photo.id === previewPhotoId) ?? approvedPhotos[0] ?? null;
   const previewAlbum = publishedAlbums.find((album) => album.slug === previewAlbumSlug) ?? null;
   const previewPhotoForCard = previewPhoto ? { ...previewPhoto, src: `/api/gallery/photos/${previewPhoto.id}/image` } : null;
-  const embedUrl = previewPhoto ? embedUrlFor(previewPhoto.id, previewAlbum?.slug) : '';
-  const iframeCode = previewPhoto ? iframeSnippet(embedUrl, previewPhoto.title, template.maxLongEdge) : '';
+  const previewAlbumPhotos = useMemo(() => {
+    const source = previewAlbum?.photos.length
+      ? previewAlbum.photos
+          .map((albumPhoto) => approvedPhotos.find((photo) => photo.id === albumPhoto.id) ?? albumPhoto)
+      : approvedPhotos;
+    return source
+      .slice(0, template.albumCount)
+      .map((photo) => ({ ...photo, src: `/api/gallery/photos/${photo.id}/image` }));
+  }, [approvedPhotos, previewAlbum, template.albumCount]);
+  const embedUrl = previewPhoto ? photoEmbedUrl(previewPhoto.id, previewAlbum?.slug) : '';
+  const iframeCode = previewPhoto ? iframeSnippet(embedUrl, previewPhoto.title, { maxLongEdge: template.maxLongEdge }) : '';
   const visibleFieldSet = new Set(template.visibleFields);
   const hiddenFields = EMBED_FIELD_OPTIONS.filter((field) => !visibleFieldSet.has(field.id));
 
@@ -203,6 +214,26 @@ export function BlogEmbedManager() {
                     preview
                   />
                 </div>
+                {previewAlbumPhotos.length > 0 && (
+                  <div className="space-y-2 pt-2">
+                    <div className="text-xs text-muted">
+                      Multi-image preview uses the album defaults below.
+                    </div>
+                    <div className="max-h-[36rem] overflow-auto border border-line bg-faint">
+                      <EmbedGalleryCard
+                        photos={previewAlbumPhotos}
+                        template={template}
+                        layout={template.albumLayout}
+                        columns={template.albumColumns}
+                        album={previewAlbum}
+                        linkHrefFor={(photo) => previewAlbum
+                          ? `/g/${previewAlbum.slug}/photo/${photo.id}`
+                          : `/gallery/photo/${photo.id}`}
+                        preview
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="border border-line px-4 py-8 text-center text-xs text-muted">No approved photos available.</div>
@@ -304,6 +335,38 @@ export function BlogEmbedManager() {
                 value={template.maxLongEdge}
                 onChange={(value) => updateTemplate('maxLongEdge', value)}
               />
+
+              <div className="space-y-3 border border-line p-3">
+                <div>
+                  <div className="label mb-1">Albums</div>
+                  <div className="text-xs text-muted">
+                    Defaults for album and selected-photo iframes.
+                  </div>
+                </div>
+                <Select
+                  label="Multi-image layout"
+                  value={template.albumLayout}
+                  options={['grid', 'carousel']}
+                  onChange={(value) => updateTemplate('albumLayout', value as EmbedTemplate['albumLayout'])}
+                />
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <NumberField
+                    label="Frames"
+                    value={template.albumCount}
+                    min={1}
+                    max={24}
+                    onChange={(value) => updateTemplate('albumCount', value)}
+                  />
+                  <NumberField
+                    label="Grid columns"
+                    value={template.albumColumns}
+                    min={2}
+                    max={4}
+                    disabled={template.albumLayout !== 'grid'}
+                    onChange={(value) => updateTemplate('albumColumns', value)}
+                  />
+                </div>
+              </div>
 
               <label className="block">
                 <span className="label mb-2 block">Equivalent target</span>
@@ -445,6 +508,37 @@ function Select({ label, value, options, onChange }: { label: string; value: str
   );
 }
 
+function NumberField({
+  label,
+  value,
+  min,
+  max,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  disabled?: boolean;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <label className="block">
+      <span className="label mb-2 block">{label}</span>
+      <input
+        type="number"
+        min={min}
+        max={max}
+        value={value}
+        disabled={disabled}
+        onChange={(event) => onChange(clampInteger(event.target.value, min, max, value))}
+        className="h-9 w-full border border-line bg-transparent px-2 text-xs outline-none focus:border-line-strong disabled:opacity-40"
+      />
+    </label>
+  );
+}
+
 function EmbedSizeField({ value, onChange }: { value: number; onChange: (value: number) => void }) {
   const normalized = clampEmbedLongEdge(value);
   const matchingPreset = EMBED_SIZE_PRESETS.find((preset) => preset.value === normalized);
@@ -487,6 +581,12 @@ function EmbedSizeField({ value, onChange }: { value: number; onChange: (value: 
       </div>
     </label>
   );
+}
+
+function clampInteger(value: number | string, min: number, max: number, fallback: number): number {
+  const number = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.max(min, Math.min(max, Math.round(number)));
 }
 
 function ToggleRow({ label, active, onToggle }: { label: string; active: boolean; onToggle: () => void }) {
@@ -582,27 +682,4 @@ function FieldChip({
       )}
     </div>
   );
-}
-
-function embedUrlFor(photoId: string, albumSlug?: string): string {
-  const origin = window.location.origin;
-  const params = new URLSearchParams();
-  if (albumSlug) params.set('album', albumSlug);
-  const suffix = params.toString() ? `?${params.toString()}` : '';
-  return `${origin}/embed/photo/${encodeURIComponent(photoId)}${suffix}`;
-}
-
-function iframeSnippet(src: string, title: string, maxLongEdge: number): string {
-  const size = clampEmbedLongEdge(maxLongEdge);
-  return `<iframe src="${src}" title="blur photo: ${escapeAttribute(title)}" loading="lazy" style="width:100%;max-width:${size}px;height:${size}px;max-height:${size}px;border:0;display:block;"></iframe>`;
-}
-
-function escapeAttribute(value: string): string {
-  return value.replace(/"/g, '&quot;');
-}
-
-function clampEmbedLongEdge(value: number | string | undefined): number {
-  const number = typeof value === 'number' ? value : Number(value);
-  if (!Number.isFinite(number)) return DEFAULT_EMBED_TEMPLATE.maxLongEdge;
-  return Math.max(MIN_EMBED_LONG_EDGE, Math.min(MAX_EMBED_LONG_EDGE, Math.round(number)));
 }

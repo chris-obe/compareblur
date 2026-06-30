@@ -25,6 +25,7 @@ export type EmbedDensity = 'compact' | 'comfortable';
 export type EmbedFrameStyle = 'minimal' | 'technical' | 'editorial';
 export type EmbedImageFit = 'cover' | 'contain';
 export type EmbedMetadataPlacement = 'bottom' | 'left' | 'right';
+export type EmbedAlbumLayout = 'grid' | 'carousel';
 
 export type EmbedFieldId =
   | 'camera'
@@ -49,6 +50,9 @@ export interface EmbedTemplate {
   visibleFields: EmbedFieldId[];
   ctaLabel: string;
   showEquivalent: boolean;
+  albumLayout: EmbedAlbumLayout;
+  albumCount: number;
+  albumColumns: number;
 }
 
 export interface GalleryAlbum {
@@ -102,6 +106,13 @@ export interface EmbedPhotoResponse {
 
 export interface EmbedSettingsResponse {
   template: EmbedTemplate;
+}
+
+export interface EmbedGalleryResponse {
+  photos: GalleryItem[];
+  album?: GalleryAlbum | null;
+  template: EmbedTemplate;
+  formats: string[];
 }
 
 export interface AdminGalleryTagsResponse {
@@ -180,6 +191,32 @@ export async function getEmbedPhoto(photoId: string, albumSlug?: string | null):
     headers: { accept: 'application/json' },
   });
   return readJson<EmbedPhotoResponse>(res);
+}
+
+export async function getEmbedAlbum(slug: string, opts: { count?: number; layout?: EmbedAlbumLayout } = {}): Promise<EmbedGalleryResponse> {
+  const params = new URLSearchParams();
+  if (opts.count) params.set('count', String(opts.count));
+  if (opts.layout) params.set('layout', opts.layout);
+  const suffix = params.toString() ? `?${params.toString()}` : '';
+  const res = await fetch(`/api/embed/album/${encodeURIComponent(slug)}${suffix}`, {
+    headers: { accept: 'application/json' },
+  });
+  return readJson<EmbedGalleryResponse>(res);
+}
+
+export async function getEmbedPhotoSet(ids: string[], opts: { layout?: EmbedAlbumLayout } = {}): Promise<EmbedGalleryResponse> {
+  const params = new URLSearchParams();
+  params.set('ids', ids.slice(0, 24).join(','));
+  if (opts.layout) params.set('layout', opts.layout);
+  const res = await fetch(`/api/embed/photos?${params.toString()}`, {
+    headers: { accept: 'application/json' },
+  });
+  return readJson<EmbedGalleryResponse>(res);
+}
+
+export async function getPublicEmbedTemplate(): Promise<EmbedTemplate> {
+  const res = await fetch('/api/embed/template', { headers: { accept: 'application/json' } });
+  return (await readJson<EmbedSettingsResponse>(res)).template;
 }
 
 function authHeaders(accessToken?: string, extra?: HeadersInit): Headers {
