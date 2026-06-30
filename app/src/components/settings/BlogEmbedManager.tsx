@@ -11,7 +11,14 @@ import {
 } from 'lucide-react';
 import { useAuth0 } from '@auth0/auth0-react';
 import { adminTokenParams } from '../../auth/config';
-import { DEFAULT_EMBED_TEMPLATE, EMBED_FIELD_OPTIONS, EMBED_METADATA_LIMIT } from '../../lib/embedTemplate';
+import {
+  DEFAULT_EMBED_TEMPLATE,
+  EMBED_FIELD_OPTIONS,
+  EMBED_METADATA_LIMIT,
+  EMBED_SIZE_PRESETS,
+  MAX_EMBED_LONG_EDGE,
+  MIN_EMBED_LONG_EDGE,
+} from '../../lib/embedTemplate';
 import { GALLERY_FORMAT_OPTIONS, formatOptionLabel } from '../../lib/galleryFormat';
 import {
   getAdminEmbedSettings,
@@ -49,7 +56,7 @@ export function BlogEmbedManager() {
   const previewAlbum = publishedAlbums.find((album) => album.slug === previewAlbumSlug) ?? null;
   const previewPhotoForCard = previewPhoto ? { ...previewPhoto, src: `/api/gallery/photos/${previewPhoto.id}/image` } : null;
   const embedUrl = previewPhoto ? embedUrlFor(previewPhoto.id, previewAlbum?.slug) : '';
-  const iframeCode = previewPhoto ? iframeSnippet(embedUrl, previewPhoto.title) : '';
+  const iframeCode = previewPhoto ? iframeSnippet(embedUrl, previewPhoto.title, template.maxLongEdge) : '';
   const visibleFieldSet = new Set(template.visibleFields);
   const hiddenFields = EMBED_FIELD_OPTIONS.filter((field) => !visibleFieldSet.has(field.id));
 
@@ -293,6 +300,11 @@ export function BlogEmbedManager() {
                 onChange={(value) => updateTemplate('imageFit', value as EmbedTemplate['imageFit'])}
               />
 
+              <EmbedSizeField
+                value={template.maxLongEdge}
+                onChange={(value) => updateTemplate('maxLongEdge', value)}
+              />
+
               <label className="block">
                 <span className="label mb-2 block">Equivalent target</span>
                 <select
@@ -433,6 +445,50 @@ function Select({ label, value, options, onChange }: { label: string; value: str
   );
 }
 
+function EmbedSizeField({ value, onChange }: { value: number; onChange: (value: number) => void }) {
+  const normalized = clampEmbedLongEdge(value);
+  const matchingPreset = EMBED_SIZE_PRESETS.find((preset) => preset.value === normalized);
+
+  return (
+    <label className="block">
+      <span className="label mb-2 block">Embed footprint</span>
+      <div className="grid grid-cols-[minmax(0,1fr)_9.5rem] border border-line focus-within:border-line-strong">
+        <div className="flex min-w-0 items-center">
+          <input
+            type="number"
+            min={MIN_EMBED_LONG_EDGE}
+            max={MAX_EMBED_LONG_EDGE}
+            step={20}
+            value={normalized}
+            onChange={(event) => onChange(clampEmbedLongEdge(event.target.value))}
+            className="h-9 min-w-0 flex-1 bg-transparent px-2 text-xs outline-none"
+            aria-label="Maximum embed long edge in pixels"
+          />
+          <span className="pr-2 text-[10px] uppercase tracking-wide text-muted">px</span>
+        </div>
+        <select
+          value={matchingPreset?.value ?? ''}
+          onChange={(event) => {
+            if (event.target.value) onChange(clampEmbedLongEdge(event.target.value));
+          }}
+          className="h-9 border-l border-line bg-transparent px-2 text-xs outline-none"
+          aria-label="Embed size preset"
+        >
+          <option value="">Custom</option>
+          {EMBED_SIZE_PRESETS.map((preset) => (
+            <option key={preset.value} value={preset.value}>
+              {preset.label}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="mt-1 text-[10px] uppercase tracking-wide text-muted">
+        Max long edge. Common blog/forum sizes are available as presets.
+      </div>
+    </label>
+  );
+}
+
 function ToggleRow({ label, active, onToggle }: { label: string; active: boolean; onToggle: () => void }) {
   return (
     <button
@@ -536,10 +592,17 @@ function embedUrlFor(photoId: string, albumSlug?: string): string {
   return `${origin}/embed/photo/${encodeURIComponent(photoId)}${suffix}`;
 }
 
-function iframeSnippet(src: string, title: string): string {
-  return `<iframe src="${src}" title="blur photo: ${escapeAttribute(title)}" loading="lazy" style="width:100%;min-height:720px;border:0;display:block;"></iframe>`;
+function iframeSnippet(src: string, title: string, maxLongEdge: number): string {
+  const size = clampEmbedLongEdge(maxLongEdge);
+  return `<iframe src="${src}" title="blur photo: ${escapeAttribute(title)}" loading="lazy" style="width:100%;max-width:${size}px;height:${size}px;max-height:${size}px;border:0;display:block;"></iframe>`;
 }
 
 function escapeAttribute(value: string): string {
   return value.replace(/"/g, '&quot;');
+}
+
+function clampEmbedLongEdge(value: number | string | undefined): number {
+  const number = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(number)) return DEFAULT_EMBED_TEMPLATE.maxLongEdge;
+  return Math.max(MIN_EMBED_LONG_EDGE, Math.min(MAX_EMBED_LONG_EDGE, Math.round(number)));
 }

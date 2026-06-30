@@ -32,6 +32,7 @@ export function PhotoEmbedCard({ photo, template, album, linkHref, preview = fal
   const sidePlacement = placement === 'left' || placement === 'right';
   const articleTheme = themeClasses(template.theme);
   const frameClasses = frameStyleClasses(template.frameStyle);
+  const maxLongEdge = safeLongEdge(template.maxLongEdge);
   const cardGrid = placement === 'bottom'
     ? 'grid-cols-2 sm:grid-cols-3'
     : 'grid-cols-1';
@@ -74,11 +75,12 @@ export function PhotoEmbedCard({ photo, template, album, linkHref, preview = fal
       data-theme={template.theme === 'system' ? undefined : template.theme}
       className={[
         articleTheme,
-        preview ? 'min-h-[38rem]' : 'min-h-dvh',
+        preview ? '' : 'min-h-dvh',
         'w-full',
       ].join(' ')}
+      style={preview ? { minHeight: `${Math.min(maxLongEdge, 720)}px` } : undefined}
     >
-      <div className="mx-auto max-w-[1040px] p-4 sm:p-6">
+      <div className="mx-auto p-4 sm:p-6" style={{ maxWidth: `${maxLongEdge}px` }}>
         <div className={['border border-line/80 p-4 sm:p-6', frameClasses.container].join(' ')}>
           <div
             className={[
@@ -141,6 +143,11 @@ function compactDate(value: string): string {
 
 function round1(value: number): number {
   return Math.round(value * 10) / 10;
+}
+
+function safeLongEdge(value: number | undefined): number {
+  if (!Number.isFinite(value)) return 960;
+  return Math.max(320, Math.min(1600, Math.round(value ?? 960)));
 }
 
 function themeClasses(theme: EmbedTemplate['theme']): string {

@@ -42,6 +42,7 @@ export interface EmbedTemplate {
   density: EmbedDensity;
   frameStyle: EmbedFrameStyle;
   imageFit: EmbedImageFit;
+  maxLongEdge: number;
   metadataPlacement: EmbedMetadataPlacement;
   showMetadata: boolean;
   defaultTargetFormatId: string;

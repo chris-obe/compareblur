@@ -26,6 +26,7 @@ export interface EmbedTemplate {
   density: EmbedDensity;
   frameStyle: EmbedFrameStyle;
   imageFit: EmbedImageFit;
+  maxLongEdge: number;
   metadataPlacement: EmbedMetadataPlacement;
   showMetadata: boolean;
   defaultTargetFormatId: string;
@@ -72,6 +73,7 @@ export const DEFAULT_EMBED_TEMPLATE: EmbedTemplate = {
   density: 'comfortable',
   frameStyle: 'minimal',
   imageFit: 'contain',
+  maxLongEdge: 960,
   metadataPlacement: 'bottom',
   showMetadata: true,
   defaultTargetFormatId: 'ff',
@@ -148,6 +150,7 @@ export function normalizeEmbedTemplate(input: unknown): EmbedTemplate {
     density: oneOf(value.density, ['compact', 'comfortable'], DEFAULT_EMBED_TEMPLATE.density),
     frameStyle: oneOf(value.frameStyle, ['minimal', 'technical', 'editorial'], DEFAULT_EMBED_TEMPLATE.frameStyle),
     imageFit: oneOf(value.imageFit, ['cover', 'contain'], DEFAULT_EMBED_TEMPLATE.imageFit),
+    maxLongEdge: numberInRange(value.maxLongEdge, 320, 1600, DEFAULT_EMBED_TEMPLATE.maxLongEdge),
     metadataPlacement: oneOf(value.metadataPlacement, ['bottom', 'left', 'right'], DEFAULT_EMBED_TEMPLATE.metadataPlacement),
     showMetadata: typeof value.showMetadata === 'boolean' ? value.showMetadata : DEFAULT_EMBED_TEMPLATE.showMetadata,
     defaultTargetFormatId: stringValue(value.defaultTargetFormatId, DEFAULT_EMBED_TEMPLATE.defaultTargetFormatId),
@@ -279,6 +282,12 @@ function oneOf<T extends string>(value: unknown, allowed: readonly T[], fallback
 
 function stringValue(value: unknown, fallback: string): string {
   return typeof value === 'string' && value.trim() ? value.trim() : fallback;
+}
+
+function numberInRange(value: unknown, min: number, max: number, fallback: number): number {
+  const number = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.max(min, Math.min(max, Math.round(number)));
 }
 
 function stringOrNull(value: unknown): string | null {
