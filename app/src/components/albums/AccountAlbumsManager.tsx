@@ -453,6 +453,7 @@ export function AccountAlbumsManager({ mode, routeAlbumSlug }: Props) {
 
   const manager = (
     <AlbumBuilder
+      bounded={mode === 'page'}
       albums={albums}
       photos={photos}
       availablePhotos={availablePhotos}
@@ -481,8 +482,8 @@ export function AccountAlbumsManager({ mode, routeAlbumSlug }: Props) {
   );
 
   return (
-    <section className="space-y-5">
-      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+    <section className={mode === 'page' ? 'flex h-full min-h-0 flex-col gap-5' : 'space-y-5'}>
+      <div className="shrink-0 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
           <div className="label mb-2">Albums</div>
           <h2 className="text-2xl font-bold tracking-tight">Your photos and albums</h2>
@@ -490,34 +491,36 @@ export function AccountAlbumsManager({ mode, routeAlbumSlug }: Props) {
       </div>
 
       {mode === 'page' && (
-        <AlbumViewer
-          albums={albums}
-          photos={photos}
-          selectedAlbum={selectedAlbum}
-          isNewRoute={isNewRoute}
-          detailMode={detailMode}
-          pageSurface={pageSurface}
-          preferences={preferences}
-          selectedPhotoIds={selectedPhotoIds}
-          selectedApprovedCount={selectedApprovedPhotoIds.length}
-          accessToken={accessToken}
-          busy={busy}
-          embedReady={embedReady}
-          error={error}
-          manager={manager}
-          selectAlbum={selectAlbum}
-          startNewAlbum={startNewAlbum}
-          reload={load}
-          setDetailMode={(nextMode) => setSearchParams(nextMode === 'edit' ? { mode: 'edit' } : {})}
-          setPageSurface={setPageSurface}
-          setSelectedPhotoIds={setSelectedPhotoIds}
-          setViewPhotoId={setViewPhotoId}
-          publishSelected={publishSelected}
-          onEmbedSelected={openSelectionEmbed}
-          onEmbedAlbum={openAlbumEmbed}
-          openAlbum={(album) => navigate(`/albums/${encodeURIComponent(album.slug)}`)}
-          openManage={() => setSearchParams({ mode: 'edit' })}
-        />
+        <div className="min-h-0 flex-1">
+          <AlbumViewer
+            albums={albums}
+            photos={photos}
+            selectedAlbum={selectedAlbum}
+            isNewRoute={isNewRoute}
+            detailMode={detailMode}
+            pageSurface={pageSurface}
+            preferences={preferences}
+            selectedPhotoIds={selectedPhotoIds}
+            selectedApprovedCount={selectedApprovedPhotoIds.length}
+            accessToken={accessToken}
+            busy={busy}
+            embedReady={embedReady}
+            error={error}
+            manager={manager}
+            selectAlbum={selectAlbum}
+            startNewAlbum={startNewAlbum}
+            reload={load}
+            setDetailMode={(nextMode) => setSearchParams(nextMode === 'edit' ? { mode: 'edit' } : {})}
+            setPageSurface={setPageSurface}
+            setSelectedPhotoIds={setSelectedPhotoIds}
+            setViewPhotoId={setViewPhotoId}
+            publishSelected={publishSelected}
+            onEmbedSelected={openSelectionEmbed}
+            onEmbedAlbum={openAlbumEmbed}
+            openAlbum={(album) => navigate(`/albums/${encodeURIComponent(album.slug)}`)}
+            openManage={() => setSearchParams({ mode: 'edit' })}
+          />
+        </div>
       )}
 
       {mode === 'settings' && (
@@ -573,6 +576,7 @@ export function AccountAlbumsManager({ mode, routeAlbumSlug }: Props) {
 }
 
 function AlbumBuilder({
+  bounded,
   albums,
   photos,
   availablePhotos,
@@ -598,6 +602,7 @@ function AlbumBuilder({
   publishSelected,
   reload,
 }: {
+  bounded: boolean;
   albums: GalleryAlbum[];
   photos: AdminGalleryPhoto[];
   availablePhotos: AdminGalleryPhoto[];
@@ -626,6 +631,22 @@ function AlbumBuilder({
   const [existingPhotoId, setExistingPhotoId] = useState('');
   const isNew = !selectedAlbumSlug;
   const empty = albumPhotos.length === 0;
+  const rootClass = bounded ? 'flex h-full min-h-0 flex-col gap-4' : 'space-y-4';
+  const gridClass = bounded
+    ? 'grid min-h-0 flex-1 gap-4 xl:grid-cols-[14rem_minmax(0,1fr)_18rem] xl:items-start xl:overflow-hidden'
+    : 'grid gap-4 xl:grid-cols-[14rem_minmax(0,1fr)_18rem]';
+  const albumNavClass = bounded
+    ? 'space-y-3 xl:flex xl:h-full xl:flex-col xl:overflow-hidden'
+    : 'space-y-3';
+  const albumListClass = bounded
+    ? 'divide-y divide-line border border-line xl:min-h-0 xl:flex-1 xl:overflow-y-auto xl:[scrollbar-gutter:stable]'
+    : 'divide-y divide-line border border-line';
+  const editorClass = bounded
+    ? 'min-w-0 space-y-5 xl:h-full xl:overflow-y-auto xl:pr-2 xl:[scrollbar-gutter:stable]'
+    : 'min-w-0 space-y-5';
+  const optionsClass = bounded
+    ? 'space-y-4 xl:h-full xl:overflow-y-auto xl:pr-1 xl:[scrollbar-gutter:stable]'
+    : 'space-y-4';
 
   const addExistingPhoto = () => {
     if (!existingPhotoId) return;
@@ -662,7 +683,7 @@ function AlbumBuilder({
   }, [albumPhotos, fileInputRef, saveAlbum, setSelectedPhotoIds]);
 
   return (
-    <div className="space-y-4">
+    <div className={rootClass}>
       {error && <ErrorBanner message={error} />}
       {progress && <UploadProgress progress={progress} />}
 
@@ -675,13 +696,13 @@ function AlbumBuilder({
         onChange={(event) => void uploadFiles(event.target.files)}
       />
 
-      <div className="grid gap-4 xl:h-[calc(100vh-9rem)] xl:min-h-[34rem] xl:grid-cols-[14rem_minmax(0,1fr)_18rem] xl:items-start xl:overflow-hidden">
-        <aside className="space-y-3 xl:flex xl:h-full xl:flex-col xl:overflow-hidden">
+      <div className={gridClass}>
+        <aside className={albumNavClass}>
           <Button variant="solid" className="w-full" onClick={startNewAlbum}>
             <Plus size={14} strokeWidth={1.5} />
             New album
           </Button>
-          <div className="divide-y divide-line border border-line xl:min-h-0 xl:flex-1 xl:overflow-y-auto xl:[scrollbar-gutter:stable]">
+          <div className={albumListClass}>
             {albums.map((album) => (
               <button
                 key={album.slug}
@@ -706,7 +727,7 @@ function AlbumBuilder({
           </div>
         </aside>
 
-        <main className="min-w-0 space-y-5 xl:h-full xl:overflow-y-auto xl:pr-2 xl:[scrollbar-gutter:stable]">
+        <main className={editorClass}>
           <section className="space-y-4">
             <input
               value={albumDraft.title}
@@ -790,7 +811,7 @@ function AlbumBuilder({
           </section>
         </main>
 
-        <aside className="space-y-4 xl:h-full xl:overflow-y-auto xl:pr-1 xl:[scrollbar-gutter:stable]">
+        <aside className={optionsClass}>
           <section className="border border-line p-3">
             <div className="label mb-3">Album options</div>
             <SelectField
