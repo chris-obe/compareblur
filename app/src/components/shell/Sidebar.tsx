@@ -3,6 +3,7 @@ import { NavLink } from 'react-router-dom';
 import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { useAdminAccess } from '../../auth/AdminAccessProvider';
 import { BrandMark } from './BrandMark';
+import { ThemeToggle } from './ThemeToggle';
 import { PRIMARY_NAV, FOOTER_NAV, type NavItemData } from './navItems';
 
 const SIDEBAR_COLLAPSED_KEY = 'blur.sidebarCollapsed';
@@ -91,12 +92,11 @@ export function Sidebar() {
     >
       <div
         className={[
-          'flex items-center border-b border-line',
-          collapsed ? 'h-20 flex-col justify-center gap-2 px-2' : 'h-14 justify-between px-4',
+          'flex h-14 items-center border-b border-line',
+          collapsed ? 'justify-center px-2' : 'px-4',
         ].join(' ')}
       >
         <BrandMark className={collapsed ? 'text-base' : ''} />
-        <SidebarCollapseControl collapsed={collapsed} onToggle={() => setCollapsed((current) => !current)} />
       </div>
 
       <nav className="flex flex-col py-2">
@@ -105,13 +105,22 @@ export function Sidebar() {
         ))}
       </nav>
 
-      {/* Footer: Admin (admins only) above Settings */}
-      <div className="mt-auto border-t border-line py-2">
-        <nav className="flex flex-col">
+      {/* Bottom: Admin/Settings nav, then a utility strip for theme + collapse */}
+      <div className="mt-auto">
+        <nav className="flex flex-col border-t border-line py-2">
           {footer.map((item) => (
             <NavItem key={item.to} {...item} collapsed={collapsed} />
           ))}
         </nav>
+        <div
+          className={[
+            'flex border-t border-line p-2',
+            collapsed ? 'flex-col items-center gap-2' : 'items-center justify-between',
+          ].join(' ')}
+        >
+          <ThemeToggle />
+          <SidebarCollapseControl collapsed={collapsed} onToggle={() => setCollapsed((current) => !current)} />
+        </div>
       </div>
     </aside>
   );

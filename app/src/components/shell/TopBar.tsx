@@ -11,7 +11,10 @@ export function TopBar({ title }: { title: string }) {
         <h1 className="truncate text-sm font-bold tracking-tight">{title}</h1>
       </div>
       <div className="flex items-center gap-3">
-        <ThemeToggle />
+        {/* theme toggle lives in the sidebar on desktop; here on mobile only */}
+        <span className="lg:hidden">
+          <ThemeToggle />
+        </span>
         <UserMenu />
       </div>
     </header>
