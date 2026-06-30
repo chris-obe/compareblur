@@ -20,8 +20,6 @@ import {
   SlidersHorizontal,
   ThumbsUp,
   UserCog,
-  Wrench,
-  X,
   XCircle,
 } from 'lucide-react';
 import { Button } from '../components/ui/Button';
@@ -713,11 +711,11 @@ function CatalogSection({
 }
 
 type CatalogDatasetSource = 'app' | 'cloudflare';
-type CatalogDatasetScope = 'full' | 'sources' | 'reconReport' | 'stats' | 'cameras' | 'lenses' | 'bindings' | 'compact';
-type CatalogDatasetView = 'overview' | 'cameras' | 'lenses' | 'sources' | 'bindings' | 'raw';
+type CatalogDatasetView = 'overview' | 'cameras' | 'lenses' | 'bindings';
+type CatalogExplorerMode = 'table' | 'json';
 type CatalogSortDirection = 'asc' | 'desc';
 type CatalogSourceType = 'external' | 'curated' | 'derived';
-type CatalogFlagFilter = 'all' | 'curated' | 'derived' | 'fixed' | 'af' | 'manual' | 'thirdParty';
+type CatalogFlagFilter = 'all' | 'fixed' | 'af' | 'manual' | 'thirdParty';
 
 interface CatalogInspectorRow {
   key: string;
@@ -769,7 +767,7 @@ function CatalogDatasetViewer({
 }) {
   const [source, setSource] = useState<CatalogDatasetSource>('cloudflare');
   const [view, setView] = useState<CatalogDatasetView>('cameras');
-  const [scope, setScope] = useState<CatalogDatasetScope>('full');
+  const [viewMode, setViewMode] = useState<CatalogExplorerMode>('table');
   const [filters, setFilters] = useState<CatalogTableFilters>({
     query: '',
     sourceType: 'all',
@@ -794,8 +792,6 @@ function CatalogDatasetViewer({
     : source === 'cloudflare'
       ? 'Canonical published export'
       : appCatalogSource;
-  const scopedValue = useMemo(() => catalogScopeValue(selected, scope), [scope, selected]);
-  const jsonText = selected ? JSON.stringify(scopedValue, null, 2) : '';
   const summary = catalogExportSummary(selected);
   const appSummary = catalogExportSummary(appCatalogRaw);
   const cloudSummary = catalogExportSummary(cloudCatalogExport);
@@ -817,7 +813,8 @@ function CatalogDatasetViewer({
   const safePage = Math.min(page, pageCount - 1);
   const pageRows = sortedRows.slice(safePage * pageSize, safePage * pageSize + pageSize);
   const selectedRow = selectedRowKey ? sortedRows.find((row) => row.key === selectedRowKey) ?? null : null;
-  const canShowTable = view !== 'overview' && view !== 'raw';
+  const canShowRows = view !== 'overview';
+  const jsonText = selected ? JSON.stringify(catalogJsonValueForView(selected, view, sortedRows, summary), null, 2) : '';
 
   useEffect(() => {
     setPage(0);
@@ -854,13 +851,13 @@ function CatalogDatasetViewer({
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `blur-catalog-${source}-${scope}.json`;
+    link.download = `blur-catalog-${source}-${view}.json`;
     link.click();
     URL.revokeObjectURL(url);
   };
 
   const downloadRowsCsv = () => {
-    if (!canShowTable || sortedRows.length === 0) return;
+    if (!canShowRows || sortedRows.length === 0) return;
     const csv = catalogRowsToCsv(sortedRows, activeColumns);
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
@@ -889,61 +886,41 @@ function CatalogDatasetViewer({
   return (
     <Panel title="Joined dataset viewer" icon={Database}>
       <div className="space-y-4">
-        <div className="grid gap-3 border border-line p-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
-          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-[minmax(13rem,0.6fr)_minmax(0,1fr)]">
-            <label className="block">
-              <span className="label mb-2 block">Viewing</span>
-              <select
-                value={source}
-                onChange={(event) => setSource(event.target.value as CatalogDatasetSource)}
-                className="h-9 w-full border border-line bg-transparent px-3 text-sm outline-none focus:border-line-strong"
-              >
-                <option value="cloudflare">Canonical Worker/R2 export</option>
-                <option value="app">App-loaded fallback/runtime export</option>
-              </select>
-              <span className="mt-1 block truncate text-[11px] text-muted">{selectedLabel}</span>
-              <span className="block truncate text-[11px] text-muted">{selectedDetail}</span>
-            </label>
-            <div>
-              <span className="label mb-2 block">Dataset table</span>
-              <div className="flex flex-wrap gap-2">
-                {catalogViewTabs.map((tab) => (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    onClick={() => setView(tab.id)}
-                    className={[
-                      'border px-3 py-2 text-xs uppercase tracking-wide',
-                      view === tab.id ? 'border-fg bg-fg text-bg' : 'border-line text-muted hover:border-line-strong hover:text-fg',
-                    ].join(' ')}
-                  >
-                    {tab.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button onClick={onLoadCloudCatalog} disabled={cloudCatalogLoading}>
-              <RefreshCw size={14} strokeWidth={1.5} />
-              {cloudCatalogLoading ? 'Loading' : 'Load latest export'}
-            </Button>
-            {canShowTable && (
-              <Button onClick={downloadRowsCsv} disabled={sortedRows.length === 0}>
-                <Download size={14} strokeWidth={1.5} />
-                CSV
-              </Button>
-            )}
-            <Button onClick={copyJson} disabled={!jsonText}>
-              <Copy size={14} strokeWidth={1.5} />
-              {copied ? 'Copied' : 'Copy JSON'}
-            </Button>
-            <Button onClick={downloadJson} disabled={!jsonText}>
-              <Download size={14} strokeWidth={1.5} />
-              JSON
-            </Button>
-          </div>
-        </div>
+        <CatalogExplorerToolbar
+          source={source}
+          selectedLabel={selectedLabel}
+          selectedDetail={selectedDetail}
+          view={view}
+          viewMode={viewMode}
+          filters={filters}
+          summary={summary}
+          appSummary={appSummary}
+          cloudSummary={cloudSummary}
+          status={status}
+          sourceOptions={sourceOptions}
+          mountOptions={mountOptions}
+          formatOptions={formatOptions}
+          pageSize={pageSize}
+          page={safePage}
+          pageCount={pageCount}
+          rowStart={sortedRows.length === 0 ? 0 : safePage * pageSize + 1}
+          rowEnd={Math.min(sortedRows.length, safePage * pageSize + pageRows.length)}
+          rowTotal={sortedRows.length}
+          canShowRows={canShowRows}
+          hasExport={!!selected}
+          cloudCatalogLoading={cloudCatalogLoading}
+          copied={copied}
+          onSourceChange={setSource}
+          onViewChange={setView}
+          onViewModeChange={setViewMode}
+          onFilterChange={updateFilter}
+          onPageSizeChange={setPageSize}
+          onPageChange={setPage}
+          onLoadCloudCatalog={onLoadCloudCatalog}
+          onExportCsv={downloadRowsCsv}
+          onCopyJson={copyJson}
+          onDownloadJson={downloadJson}
+        />
 
         {cloudCatalogError && (
           <div className="border border-line bg-faint p-3 text-xs">
@@ -954,113 +931,48 @@ function CatalogDatasetViewer({
           </div>
         )}
 
-        <CatalogIntegrityStrip
-          selected={selected}
-          selectedLabel={selectedLabel}
-          appCatalogSource={appCatalogSource}
-          appSummary={appSummary}
-          cloudSummary={cloudSummary}
-          status={status}
-          source={source}
-          summary={summary}
-        />
-
         {!selected && (
           <div className="border border-line bg-faint p-4 text-sm text-muted">
             {source === 'cloudflare' ? 'Click Fetch Cloudflare to load the Worker/R2 export.' : 'The app-loaded catalog has not finished loading.'}
           </div>
         )}
 
-        {selected && view === 'overview' && (
+        {selected && view === 'overview' && viewMode === 'table' && (
           <CatalogOverview
             exportData={selected}
             summary={summary}
             onShowCurated={() => {
               setView('lenses');
-              setFilters((current) => ({ ...current, flag: 'curated', query: '', sourceType: 'all' }));
-            }}
-            onShowSources={() => {
-              setView('sources');
-              setFilters((current) => ({ ...current, query: '', sourceType: 'all', primarySource: '', mount: '', format: '', flag: 'all' }));
+              setViewMode('table');
+              setFilters((current) => ({ ...current, flag: 'all', query: '', sourceType: 'curated' }));
             }}
           />
         )}
 
-        {selected && canShowTable && (
-          <div className="space-y-3">
-            <CatalogTableControls
-              filters={filters}
-              sourceOptions={sourceOptions}
-              mountOptions={mountOptions}
-              formatOptions={formatOptions}
-              pageSize={pageSize}
-              page={safePage}
-              pageCount={pageCount}
-              rowStart={sortedRows.length === 0 ? 0 : safePage * pageSize + 1}
-              rowEnd={Math.min(sortedRows.length, safePage * pageSize + pageRows.length)}
-              rowTotal={sortedRows.length}
-              onFilterChange={updateFilter}
-              onPageSizeChange={setPageSize}
-              onPageChange={setPage}
-              structuredFilters={view === 'cameras' || view === 'lenses'}
-            />
-            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(22rem,0.45fr)]">
-              <div className="min-w-0">
-                <CatalogDataTable
-                  rows={pageRows}
-                  columns={activeColumns}
-                  sortBy={sortBy}
-                  sortDirection={sortDirection}
-                  selectedRowKey={selectedRowKey}
-                  onSort={toggleSort}
-                  onSelect={setSelectedRowKey}
-                />
-              </div>
-              <CatalogRowDetails row={selectedRow} onCopy={copyRowJson} copied={rowCopied} />
+        {selected && canShowRows && viewMode === 'table' && (
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(22rem,0.45fr)]">
+            <div className="min-w-0">
+              <CatalogDataTable
+                rows={pageRows}
+                columns={activeColumns}
+                sortBy={sortBy}
+                sortDirection={sortDirection}
+                selectedRowKey={selectedRowKey}
+                onSort={toggleSort}
+                onSelect={setSelectedRowKey}
+              />
             </div>
+            <CatalogRowDetails row={selectedRow} onCopy={copyRowJson} copied={rowCopied} />
           </div>
         )}
 
-        {selected && view === 'raw' && (
-          <div className="space-y-3">
-            <label className="block max-w-sm">
-              <span className="label mb-2 block">JSON scope</span>
-              <select
-                value={scope}
-                onChange={(event) => setScope(event.target.value as CatalogDatasetScope)}
-                className="h-9 w-full border border-line bg-transparent px-3 text-sm outline-none focus:border-line-strong"
-              >
-                <option value="full">Full export</option>
-                <option value="sources">Sources</option>
-                <option value="reconReport">Recon report</option>
-                <option value="stats">Stats</option>
-                <option value="cameras">Cameras</option>
-                <option value="lenses">Lenses</option>
-                <option value="bindings">Bindings</option>
-                <option value="compact">Compact data</option>
-              </select>
-            </label>
-            <textarea
-              readOnly
-              spellCheck={false}
-              value={jsonText}
-              className="h-[34rem] w-full resize-y border border-line bg-faint p-3 font-mono text-[11px] leading-relaxed outline-none"
-            />
-          </div>
+        {selected && viewMode === 'json' && (
+          <CatalogJsonViewer value={jsonText} />
         )}
       </div>
     </Panel>
   );
 }
-
-const catalogViewTabs: Array<{ id: CatalogDatasetView; label: string }> = [
-  { id: 'overview', label: 'Overview' },
-  { id: 'cameras', label: 'Cameras' },
-  { id: 'lenses', label: 'Lenses' },
-  { id: 'sources', label: 'Sources' },
-  { id: 'bindings', label: 'Bindings' },
-  { id: 'raw', label: 'Raw JSON' },
-];
 
 function CatalogWorkerSummary({
   appCatalogStatus,
@@ -1102,69 +1014,362 @@ function CatalogWorkerSummary({
   );
 }
 
-function CatalogIntegrityStrip({
+function CatalogExplorerToolbar({
+  source,
+  selectedLabel,
+  selectedDetail,
+  view,
+  viewMode,
+  filters,
+  summary,
   appSummary,
   cloudSummary,
   status,
-  summary,
+  sourceOptions,
+  mountOptions,
+  formatOptions,
+  pageSize,
+  page,
+  pageCount,
+  rowStart,
+  rowEnd,
+  rowTotal,
+  canShowRows,
+  hasExport,
+  cloudCatalogLoading,
+  copied,
+  onSourceChange,
+  onViewChange,
+  onViewModeChange,
+  onFilterChange,
+  onPageSizeChange,
+  onPageChange,
+  onLoadCloudCatalog,
+  onExportCsv,
+  onCopyJson,
+  onDownloadJson,
 }: {
-  selected: CatalogLatestExport | null;
+  source: CatalogDatasetSource;
   selectedLabel: string;
-  appCatalogSource: string;
+  selectedDetail: string;
+  view: CatalogDatasetView;
+  viewMode: CatalogExplorerMode;
+  filters: CatalogTableFilters;
+  summary: ReturnType<typeof catalogExportSummary>;
   appSummary: ReturnType<typeof catalogExportSummary>;
   cloudSummary: ReturnType<typeof catalogExportSummary>;
   status: CatalogAdminStatus | null;
-  source: CatalogDatasetSource;
-  summary: ReturnType<typeof catalogExportSummary>;
+  sourceOptions: string[];
+  mountOptions: string[];
+  formatOptions: string[];
+  pageSize: number;
+  page: number;
+  pageCount: number;
+  rowStart: number;
+  rowEnd: number;
+  rowTotal: number;
+  canShowRows: boolean;
+  hasExport: boolean;
+  cloudCatalogLoading: boolean;
+  copied: boolean;
+  onSourceChange: (value: CatalogDatasetSource) => void;
+  onViewChange: (value: CatalogDatasetView) => void;
+  onViewModeChange: (value: CatalogExplorerMode) => void;
+  onFilterChange: <K extends keyof CatalogTableFilters>(key: K, value: CatalogTableFilters[K]) => void;
+  onPageSizeChange: (value: number) => void;
+  onPageChange: (value: number | ((current: number) => number)) => void;
+  onLoadCloudCatalog: () => Promise<void>;
+  onExportCsv: () => void;
+  onCopyJson: () => void;
+  onDownloadJson: () => void;
 }) {
-  const [activeInsight, setActiveInsight] = useState<'cameras' | 'lenses' | 'bindings' | 'drift' | null>(null);
   const run = status?.lastSuccess ?? status?.lastRun ?? null;
   const drift = compareExportSummaries(appSummary, cloudSummary);
+  const sourceTypeCounts = view === 'cameras'
+    ? summary.cameraSourceTypes
+    : view === 'lenses'
+      ? summary.lensSourceTypes
+      : null;
+  const structuredFilters = view === 'cameras' || view === 'lenses';
+  const datasetButtons: Array<{ id: CatalogDatasetView; label: string; count: number; title: string }> = [
+    {
+      id: 'overview',
+      label: 'Overview',
+      count: summary.sources,
+      title: `Overview source count: ${summary.sources}. ${drift.detail}`,
+    },
+    {
+      id: 'cameras',
+      label: 'Cameras',
+      count: summary.cameras,
+      title: [
+        runCountDetail(run?.camera_count, summary.cameras),
+        sourceTypeTitle(summary.cameraSourceTypes),
+      ].join(' · '),
+    },
+    {
+      id: 'lenses',
+      label: 'Lenses',
+      count: summary.lenses,
+      title: [
+        runCountDetail(run?.lens_count, summary.lenses),
+        sourceTypeTitle(summary.lensSourceTypes),
+      ].join(' · '),
+    },
+    {
+      id: 'bindings',
+      label: 'Bindings',
+      count: summary.bindings,
+      title: [
+        'Camera-lens association records, including fixed-lens compact bindings and other catalog links.',
+        runCountDetail(run?.binding_count, summary.bindings),
+      ].join(' · '),
+    },
+  ];
+
   return (
-    <div className="space-y-3">
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <IntegrityMetric
-          label="Cameras"
-          value={String(summary.cameras)}
-          detail={runCountDetail(run?.camera_count, summary.cameras)}
-          tone={countTone(summary.cameras, run?.camera_count)}
-          active={activeInsight === 'cameras'}
-          onClick={() => setActiveInsight((current) => current === 'cameras' ? null : 'cameras')}
-        />
-        <IntegrityMetric
-          label="Lenses"
-          value={String(summary.lenses)}
-          detail={runCountDetail(run?.lens_count, summary.lenses)}
-          tone={countTone(summary.lenses, run?.lens_count)}
-          active={activeInsight === 'lenses'}
-          onClick={() => setActiveInsight((current) => current === 'lenses' ? null : 'lenses')}
-        />
-        <IntegrityMetric
-          label="Bindings"
-          value={String(summary.bindings)}
-          detail={runCountDetail(run?.binding_count, summary.bindings)}
-          tone={countTone(summary.bindings, run?.binding_count)}
-          active={activeInsight === 'bindings'}
-          onClick={() => setActiveInsight((current) => current === 'bindings' ? null : 'bindings')}
-        />
-        <IntegrityMetric
-          label="Source drift"
-          value={drift.ok ? 'Aligned' : 'Mismatch'}
-          detail={drift.detail}
-          tone={drift.ok ? 'ok' : 'bad'}
-          active={activeInsight === 'drift'}
-          onClick={() => setActiveInsight((current) => current === 'drift' ? null : 'drift')}
-        />
+    <div className="border border-line">
+      <div className="flex flex-wrap items-end gap-2 p-2">
+        <LabeledControl label="Viewing" className="min-w-[13rem] flex-[0_1_17rem]">
+          <select
+            value={source}
+            onChange={(event) => onSourceChange(event.target.value as CatalogDatasetSource)}
+            className="h-8 w-full border border-line bg-transparent px-2 text-xs outline-none focus:border-line-strong"
+          >
+            <option value="cloudflare">Canonical Worker/R2 export</option>
+            <option value="app">App-loaded fallback/runtime export</option>
+          </select>
+          <span className="mt-1 block truncate text-[11px] text-muted">{selectedLabel}</span>
+          <span className="block truncate text-[11px] text-muted">{selectedDetail}</span>
+        </LabeledControl>
+
+        <div className="flex flex-wrap gap-1" aria-label="Catalog dataset">
+          {datasetButtons.map((button) => (
+            <CatalogCountButton
+              key={button.id}
+              label={button.label}
+              count={button.count}
+              active={view === button.id}
+              title={button.title}
+              onClick={() => onViewChange(button.id)}
+            />
+          ))}
+        </div>
+
+        {sourceTypeCounts && (
+          <div className="flex flex-wrap gap-1" aria-label="Source type filter">
+            {(['external', 'derived', 'curated'] as const).map((sourceType) => {
+              const active = filters.sourceType === sourceType;
+              return (
+                <CatalogSourceTypeButton
+                  key={sourceType}
+                  label={sourceType}
+                  count={sourceTypeCounts[sourceType]}
+                  active={active}
+                  onClick={() => onFilterChange('sourceType', active ? 'all' : sourceType)}
+                />
+              );
+            })}
+          </div>
+        )}
+
+        <div className="ml-auto flex flex-wrap items-end gap-2">
+          <CatalogViewModeToggle value={viewMode} onChange={onViewModeChange} />
+          <CatalogActionsMenu
+            canExportCsv={canShowRows && rowTotal > 0}
+            canUseJson={hasExport}
+            loading={cloudCatalogLoading}
+            copied={copied}
+            onLoadCloudCatalog={onLoadCloudCatalog}
+            onExportCsv={onExportCsv}
+            onCopyJson={onCopyJson}
+            onDownloadJson={onDownloadJson}
+          />
+        </div>
       </div>
-      {activeInsight && (
-        <SourceInsightPanel
-          insight={activeInsight}
-          summary={summary}
-          drift={drift}
-          onClose={() => setActiveInsight(null)}
+
+      {canShowRows && (
+        <CatalogTableControls
+          filters={filters}
+          sourceOptions={sourceOptions}
+          mountOptions={mountOptions}
+          formatOptions={formatOptions}
+          pageSize={pageSize}
+          page={page}
+          pageCount={pageCount}
+          rowStart={rowStart}
+          rowEnd={rowEnd}
+          rowTotal={rowTotal}
+          onFilterChange={onFilterChange}
+          onPageSizeChange={onPageSizeChange}
+          onPageChange={onPageChange}
+          structuredFilters={structuredFilters}
         />
       )}
     </div>
+  );
+}
+
+function CatalogCountButton({
+  label,
+  count,
+  active,
+  title,
+  onClick,
+}: {
+  label: string;
+  count: number;
+  active: boolean;
+  title: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      onClick={onClick}
+      className={[
+        'flex h-8 items-center gap-2 border px-2 text-xs transition-colors',
+        active ? 'border-fg bg-fg text-bg' : 'border-line text-muted hover:border-line-strong hover:bg-faint hover:text-fg',
+      ].join(' ')}
+    >
+      <span className="uppercase tracking-wide">{label}</span>
+      <span className="font-bold tabular-nums">{count}</span>
+    </button>
+  );
+}
+
+function CatalogSourceTypeButton({
+  label,
+  count,
+  active,
+  onClick,
+}: {
+  label: CatalogSourceType;
+  count: number;
+  active: boolean;
+  onClick: () => void;
+}) {
+  const display = label[0].toUpperCase() + label.slice(1);
+  return (
+    <button
+      type="button"
+      title={`${active ? 'Clear' : 'Filter'} ${display.toLowerCase()} records`}
+      onClick={onClick}
+      className={[
+        'flex h-8 items-center gap-1 border px-2 text-[11px] transition-colors',
+        active ? 'border-fg bg-fg text-bg' : 'border-line text-muted hover:border-line-strong hover:bg-faint hover:text-fg',
+      ].join(' ')}
+    >
+      <span>{display}</span>
+      <span className="font-bold tabular-nums">{count}</span>
+    </button>
+  );
+}
+
+function CatalogViewModeToggle({
+  value,
+  onChange,
+}: {
+  value: CatalogExplorerMode;
+  onChange: (value: CatalogExplorerMode) => void;
+}) {
+  return (
+    <div className="flex h-8 border border-line" role="group" aria-label="View mode">
+      {(['table', 'json'] as const).map((mode) => (
+        <button
+          key={mode}
+          type="button"
+          title={`Show ${mode === 'table' ? 'table' : 'JSON'} view`}
+          onClick={() => onChange(mode)}
+          className={[
+            'border-r border-line px-2 text-xs uppercase tracking-wide transition-colors last:border-r-0',
+            value === mode ? 'bg-fg text-bg' : 'text-muted hover:bg-faint hover:text-fg',
+          ].join(' ')}
+        >
+          {mode}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function CatalogActionsMenu({
+  canExportCsv,
+  canUseJson,
+  loading,
+  copied,
+  onLoadCloudCatalog,
+  onExportCsv,
+  onCopyJson,
+  onDownloadJson,
+}: {
+  canExportCsv: boolean;
+  canUseJson: boolean;
+  loading: boolean;
+  copied: boolean;
+  onLoadCloudCatalog: () => Promise<void>;
+  onExportCsv: () => void;
+  onCopyJson: () => void;
+  onDownloadJson: () => void;
+}) {
+  return (
+    <details className="relative">
+      <summary className="flex h-8 cursor-pointer list-none items-center gap-2 border border-line px-2 text-xs uppercase tracking-wide text-muted transition-colors hover:border-line-strong hover:bg-faint hover:text-fg [&::-webkit-details-marker]:hidden">
+        <Download size={14} strokeWidth={1.5} />
+        Actions
+      </summary>
+      <div className="absolute right-0 z-20 mt-1 w-44 border border-line bg-bg p-1 shadow-sm">
+        <ToolbarActionButton disabled={loading} onClick={() => void onLoadCloudCatalog()}>
+          <RefreshCw size={13} strokeWidth={1.5} />
+          {loading ? 'Loading' : 'Load latest'}
+        </ToolbarActionButton>
+        <ToolbarActionButton disabled={!canExportCsv} onClick={onExportCsv}>
+          <Download size={13} strokeWidth={1.5} />
+          Export CSV
+        </ToolbarActionButton>
+        <ToolbarActionButton disabled={!canUseJson} onClick={onCopyJson}>
+          <Copy size={13} strokeWidth={1.5} />
+          {copied ? 'Copied' : 'Copy JSON'}
+        </ToolbarActionButton>
+        <ToolbarActionButton disabled={!canUseJson} onClick={onDownloadJson}>
+          <Download size={13} strokeWidth={1.5} />
+          Download JSON
+        </ToolbarActionButton>
+      </div>
+    </details>
+  );
+}
+
+function ToolbarActionButton({
+  disabled,
+  onClick,
+  children,
+}: {
+  disabled?: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className="flex h-8 w-full items-center gap-2 px-2 text-left text-xs text-muted transition-colors hover:bg-faint hover:text-fg disabled:pointer-events-none disabled:opacity-40"
+    >
+      {children}
+    </button>
+  );
+}
+
+function CatalogJsonViewer({ value }: { value: string }) {
+  return (
+    <textarea
+      readOnly
+      spellCheck={false}
+      value={value}
+      className="h-[34rem] w-full resize-y border border-line bg-faint p-3 font-mono text-[11px] leading-relaxed outline-none"
+    />
   );
 }
 
@@ -1173,130 +1378,21 @@ function IntegrityMetric({
   value,
   detail,
   tone,
-  active,
-  onClick,
 }: {
   label: string;
   value: string;
   detail: string;
   tone: 'ok' | 'bad' | 'neutral';
-  active?: boolean;
-  onClick?: () => void;
 }) {
   const Icon = tone === 'ok' ? CheckCircle2 : tone === 'bad' ? XCircle : AlertTriangle;
-  const interactive = !!onClick;
-  const content = (
-    <>
+  return (
+    <div className={['border p-3', tone === 'bad' ? 'border-line-strong bg-faint' : 'border-line'].join(' ')}>
       <div className="mb-2 flex items-center justify-between gap-2">
         <div className="label">{label}</div>
-        <span className="flex items-center gap-2">
-          {interactive && <Wrench size={12} strokeWidth={1.5} className="text-muted" />}
-          <Icon size={14} strokeWidth={1.5} className={tone === 'bad' ? 'text-fg' : 'text-muted'} />
-        </span>
+        <Icon size={14} strokeWidth={1.5} className={tone === 'bad' ? 'text-fg' : 'text-muted'} />
       </div>
       <div className="truncate text-lg font-bold tracking-tight">{value}</div>
       <div className="mt-1 truncate text-xs text-muted">{detail}</div>
-    </>
-  );
-  if (interactive) {
-    return (
-      <button
-        type="button"
-        onClick={onClick}
-        title={`Show ${label.toLowerCase()} provenance`}
-        className={[
-          'w-full border p-3 text-left transition-colors hover:border-line-strong hover:bg-faint',
-          tone === 'bad' || active ? 'border-line-strong bg-faint' : 'border-line',
-        ].join(' ')}
-      >
-        {content}
-      </button>
-    );
-  }
-  return (
-    <div className={['border p-3', tone === 'bad' ? 'border-line-strong bg-faint' : 'border-line'].join(' ')}>
-      {content}
-    </div>
-  );
-}
-
-function SourceInsightPanel({
-  insight,
-  summary,
-  drift,
-  onClose,
-}: {
-  insight: 'cameras' | 'lenses' | 'bindings' | 'drift';
-  summary: ReturnType<typeof catalogExportSummary>;
-  drift: ReturnType<typeof compareExportSummaries>;
-  onClose: () => void;
-}) {
-  const title = insight === 'drift'
-    ? 'Source drift'
-    : insight === 'bindings'
-      ? 'Bindings'
-      : `${insight[0].toUpperCase()}${insight.slice(1)} provenance mix`;
-  const rows = insight === 'cameras'
-    ? [['Cameras', summary.cameraSourceTypes] as const]
-    : insight === 'lenses'
-      ? [['Lenses', summary.lensSourceTypes] as const]
-      : [];
-  return (
-    <div className="border border-line p-3">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div>
-          <div className="label mb-1">{title}</div>
-          <div className="text-xs text-muted">
-            {insight === 'drift'
-              ? drift.detail
-              : insight === 'bindings'
-                ? 'Catalog binding totals and fixed-lens coverage.'
-                : 'Per entity, not combined totals.'}
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={onClose}
-          title="Collapse provenance panel"
-          aria-label="Collapse provenance panel"
-          className="flex h-8 w-8 items-center justify-center border border-line text-muted transition-colors hover:border-line-strong hover:text-fg"
-        >
-          <X size={14} strokeWidth={1.5} />
-        </button>
-      </div>
-      {rows.length > 0 && (
-        <div className="grid gap-2 md:grid-cols-2">
-          {rows.map(([label, counts]) => (
-            <div key={label} className="grid grid-cols-[5rem_repeat(3,minmax(0,1fr))] items-center gap-2 text-xs">
-              <div className="font-bold">{label}</div>
-              <SourceTypePill label="External" value={counts.external} />
-              <SourceTypePill label="Derived" value={counts.derived} />
-              <SourceTypePill label="Curated" value={counts.curated} />
-            </div>
-          ))}
-        </div>
-      )}
-      {insight === 'bindings' && (
-        <div className="grid gap-2 text-xs md:grid-cols-3">
-          <SourceTypePill label="Bindings" value={summary.bindings} />
-          <SourceTypePill label="Sources" value={summary.sources} />
-          <SourceTypePill label="Cameras" value={summary.cameras} />
-        </div>
-      )}
-      {insight === 'drift' && (
-        <div className="border border-line bg-faint p-3 text-xs">
-          {drift.ok ? 'App-loaded and Worker/R2 export counts are aligned.' : drift.detail}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function SourceTypePill({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="flex items-center justify-between gap-2 border border-line px-2 py-1">
-      <span className="text-muted">{label}</span>
-      <span className="font-bold">{value}</span>
     </div>
   );
 }
@@ -1305,12 +1401,10 @@ function CatalogOverview({
   exportData,
   summary,
   onShowCurated,
-  onShowSources,
 }: {
   exportData: CatalogLatestExport;
   summary: ReturnType<typeof catalogExportSummary>;
   onShowCurated: () => void;
-  onShowSources: () => void;
 }) {
   const recon = asRecord(exportData.reconReport);
   const bakeoffRows = Array.isArray(recon.sourceBakeoff) ? recon.sourceBakeoff.map(asRecord) : [];
@@ -1360,7 +1454,6 @@ function CatalogOverview({
           exportData={exportData}
           summary={summary}
           onShowCurated={onShowCurated}
-          onShowSources={onShowSources}
         />
         <div className="border border-line">
           <div className="border-b border-line bg-faint px-3 py-2 text-xs uppercase tracking-wide text-muted">
@@ -1384,12 +1477,10 @@ function CatalogBuildReport({
   exportData,
   summary,
   onShowCurated,
-  onShowSources,
 }: {
   exportData: CatalogLatestExport;
   summary: ReturnType<typeof catalogExportSummary>;
   onShowCurated: () => void;
-  onShowSources: () => void;
 }) {
   const recon = asRecord(exportData.reconReport);
   const curatedGaps = asRecord(recon.curatedGaps);
@@ -1432,8 +1523,6 @@ function CatalogBuildReport({
           label="Sources"
           value={String(summary.sources)}
           detail="Fetch snapshots and bakeoff metadata"
-          actionLabel="View sources"
-          onAction={onShowSources}
         />
       </div>
     </details>
@@ -1506,7 +1595,7 @@ function CatalogTableControls({
   const canGoForward = page < pageCount - 1;
 
   return (
-    <div className="flex flex-wrap items-end gap-2 border border-line p-2">
+    <div className="flex flex-wrap items-end gap-2 border-t border-line p-2">
       <LabeledControl label="Search" className="min-w-[14rem] flex-[2_1_18rem]">
         <input
           value={filters.query}
@@ -1516,84 +1605,68 @@ function CatalogTableControls({
         />
       </LabeledControl>
 
-      <LabeledControl label="Type" className="w-32">
-        <select
-          value={filters.sourceType}
-          onChange={(event) => onFilterChange('sourceType', event.target.value as CatalogTableFilters['sourceType'])}
-          disabled={!structuredFilters}
-          className="h-8 w-full border border-line bg-transparent px-2 text-xs outline-none focus:border-line-strong disabled:opacity-40"
-        >
-          <option value="all">All</option>
-          <option value="external">External</option>
-          <option value="derived">Derived</option>
-          <option value="curated">Curated</option>
-        </select>
-      </LabeledControl>
+      {structuredFilters && (
+        <>
+          <LabeledControl label="Source" className="w-36">
+            <select
+              value={filters.primarySource}
+              onChange={(event) => onFilterChange('primarySource', event.target.value)}
+              className="h-8 w-full border border-line bg-transparent px-2 text-xs outline-none focus:border-line-strong"
+            >
+              <option value="">All</option>
+              {sourceOptions.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          </LabeledControl>
 
-      <LabeledControl label="Source" className="w-36">
-        <select
-          value={filters.primarySource}
-          onChange={(event) => onFilterChange('primarySource', event.target.value)}
-          disabled={!structuredFilters}
-          className="h-8 w-full border border-line bg-transparent px-2 text-xs outline-none focus:border-line-strong disabled:opacity-40"
-        >
-          <option value="">All</option>
-          {sourceOptions.map((option) => (
-            <option key={option} value={option}>
-              {option}
-            </option>
-          ))}
-        </select>
-      </LabeledControl>
+          <LabeledControl label="Mount" className="w-32">
+            <select
+              value={filters.mount}
+              onChange={(event) => onFilterChange('mount', event.target.value)}
+              className="h-8 w-full border border-line bg-transparent px-2 text-xs outline-none focus:border-line-strong"
+            >
+              <option value="">All</option>
+              {mountOptions.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          </LabeledControl>
 
-      <LabeledControl label="Mount" className="w-32">
-        <select
-          value={filters.mount}
-          onChange={(event) => onFilterChange('mount', event.target.value)}
-          disabled={!structuredFilters}
-          className="h-8 w-full border border-line bg-transparent px-2 text-xs outline-none focus:border-line-strong disabled:opacity-40"
-        >
-          <option value="">All</option>
-          {mountOptions.map((option) => (
-            <option key={option} value={option}>
-              {option}
-            </option>
-          ))}
-        </select>
-      </LabeledControl>
+          <LabeledControl label="Format" className="w-32">
+            <select
+              value={filters.format}
+              onChange={(event) => onFilterChange('format', event.target.value)}
+              className="h-8 w-full border border-line bg-transparent px-2 text-xs outline-none focus:border-line-strong"
+            >
+              <option value="">All</option>
+              {formatOptions.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          </LabeledControl>
 
-      <LabeledControl label="Format" className="w-32">
-        <select
-          value={filters.format}
-          onChange={(event) => onFilterChange('format', event.target.value)}
-          disabled={!structuredFilters}
-          className="h-8 w-full border border-line bg-transparent px-2 text-xs outline-none focus:border-line-strong disabled:opacity-40"
-        >
-          <option value="">All</option>
-          {formatOptions.map((option) => (
-            <option key={option} value={option}>
-              {option}
-            </option>
-          ))}
-        </select>
-      </LabeledControl>
-
-      <LabeledControl label="Flag" className="w-32">
-        <select
-          value={filters.flag}
-          onChange={(event) => onFilterChange('flag', event.target.value as CatalogFlagFilter)}
-          disabled={!structuredFilters}
-          className="h-8 w-full border border-line bg-transparent px-2 text-xs outline-none focus:border-line-strong disabled:opacity-40"
-        >
-          <option value="all">All</option>
-          <option value="curated">Curated</option>
-          <option value="derived">Derived</option>
-          <option value="fixed">Fixed lens</option>
-          <option value="af">AF</option>
-          <option value="manual">Manual</option>
-          <option value="thirdParty">Third-party</option>
-        </select>
-      </LabeledControl>
+          <LabeledControl label="Flag" className="w-32">
+            <select
+              value={filters.flag}
+              onChange={(event) => onFilterChange('flag', event.target.value as CatalogFlagFilter)}
+              className="h-8 w-full border border-line bg-transparent px-2 text-xs outline-none focus:border-line-strong"
+            >
+              <option value="all">All</option>
+              <option value="fixed">Fixed lens</option>
+              <option value="af">AF</option>
+              <option value="manual">Manual</option>
+              <option value="thirdParty">Third-party</option>
+            </select>
+          </LabeledControl>
+        </>
+      )}
 
       <div className="ml-auto flex flex-wrap items-end gap-2">
         <div className="flex h-8 items-center border border-line px-2 text-xs text-muted tabular-nums" title="Visible row range">
@@ -1836,21 +1909,32 @@ function DetailLine({ label, value }: { label: string; value: string }) {
   );
 }
 
-function catalogScopeValue(exportData: CatalogLatestExport | null, scope: CatalogDatasetScope): unknown {
-  if (!exportData) return null;
-  if (scope === 'full') return exportData;
-  return exportData[scope] ?? null;
-}
-
 function runCountDetail(runCount: number | null | undefined, exportCount: number): string {
   if (runCount == null) return 'No Worker run count';
   if (Number(runCount) === exportCount) return `Matches last successful run (${runCount})`;
   return `Last successful run: ${runCount}`;
 }
 
-function countTone(exportCount: number, runCount: number | null | undefined): 'ok' | 'bad' | 'neutral' {
-  if (runCount == null) return exportCount > 0 ? 'ok' : 'neutral';
-  return Number(runCount) === exportCount ? 'ok' : 'bad';
+function sourceTypeTitle(counts: ReturnType<typeof sourceTypeCounts>): string {
+  return `External ${counts.external}, derived ${counts.derived}, curated ${counts.curated}`;
+}
+
+function catalogJsonValueForView(
+  exportData: CatalogLatestExport,
+  view: CatalogDatasetView,
+  rows: CatalogInspectorRow[],
+  summary: ReturnType<typeof catalogExportSummary>,
+): unknown {
+  if (view === 'overview') {
+    return {
+      generatedAt: exportData.generatedAt,
+      summary,
+      sources: exportData.sources ?? [],
+      stats: exportData.stats ?? null,
+      reconReport: exportData.reconReport ?? null,
+    };
+  }
+  return rows.map((row) => row.record);
 }
 
 function compareExportSummaries(
@@ -2020,7 +2104,6 @@ function catalogRowsForView(
 ): CatalogInspectorRow[] {
   if (view === 'cameras') return rows.cameras;
   if (view === 'lenses') return rows.lenses;
-  if (view === 'sources') return rows.sources;
   if (view === 'bindings') return rows.bindings;
   return [];
 }
@@ -2028,7 +2111,6 @@ function catalogRowsForView(
 function catalogColumnsForView(view: CatalogDatasetView): CatalogColumn[] {
   if (view === 'cameras') return cameraColumns;
   if (view === 'lenses') return lensColumns;
-  if (view === 'sources') return sourceColumns;
   if (view === 'bindings') return bindingColumns;
   return [];
 }
@@ -2064,16 +2146,6 @@ const lensColumns: CatalogColumn[] = [
   { id: 'curatedReason', label: 'Curated reason', render: (row) => textValue(row.record.curatedReason), sortValue: (row) => textValue(row.record.curatedReason) },
 ];
 
-const sourceColumns: CatalogColumn[] = [
-  { id: 'label', label: 'Source', render: (row) => <PrimaryCell title={row.label} detail={textValue(row.record.url)} />, sortValue: (row) => row.label },
-  { id: 'role', label: 'Role', render: (row) => textValue(row.record.role), sortValue: (row) => textValue(row.record.role) },
-  { id: 'status', label: 'Status', render: (row) => textValue(row.record.status), sortValue: (row) => textValue(row.record.status) },
-  { id: 'records', label: 'Records', render: (row) => textValue(row.record.records), sortValue: (row) => numberValue(row.record.records) },
-  { id: 'license', label: 'License', render: (row) => textValue(row.record.license), sortValue: (row) => textValue(row.record.license) },
-  { id: 'fetchedAt', label: 'Fetched', render: (row) => formatDate(textValue(row.record.fetchedAt)), sortValue: (row) => textValue(row.record.fetchedAt) },
-  { id: 'sha', label: 'SHA', render: (row) => truncateMiddle(textValue(row.record.sha256), 18), sortValue: (row) => textValue(row.record.sha256) },
-];
-
 const bindingColumns: CatalogColumn[] = [
   { id: 'camera', label: 'Camera', render: (row) => <PrimaryCell title={textValue(row.record.cameraName) || textValue(row.record.cameraId)} detail={textValue(row.record.cameraId)} />, sortValue: (row) => textValue(row.record.cameraName) || textValue(row.record.cameraId) },
   { id: 'lens', label: 'Lens', render: (row) => <PrimaryCell title={textValue(row.record.lensName) || textValue(row.record.lensId)} detail={textValue(row.record.lensId)} />, sortValue: (row) => textValue(row.record.lensName) || textValue(row.record.lensId) },
@@ -2094,8 +2166,6 @@ function filterCatalogRows(
     if (filters.primarySource && row.primarySource !== filters.primarySource) return false;
     if (filters.mount && !row.mounts.includes(filters.mount)) return false;
     if (filters.format && !row.formats.includes(filters.format)) return false;
-    if (filters.flag === 'curated' && row.sourceType !== 'curated') return false;
-    if (filters.flag === 'derived' && row.sourceType !== 'derived') return false;
     if (filters.flag === 'fixed' && !row.fixed) return false;
     if (filters.flag === 'af' && row.af !== true) return false;
     if (filters.flag === 'manual' && row.af !== false) return false;
@@ -2215,12 +2285,6 @@ function uniqueSorted(values: Array<string | undefined>): string[] {
   return Array.from(new Set(values.filter((value): value is string => Boolean(value)))).sort((a, b) =>
     a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }),
   );
-}
-
-function truncateMiddle(value: string, length: number): string {
-  if (!value || value.length <= length) return value || 'None';
-  const edge = Math.floor((length - 3) / 2);
-  return `${value.slice(0, edge)}...${value.slice(-edge)}`;
 }
 
 function csvEscape(value: string): string {
