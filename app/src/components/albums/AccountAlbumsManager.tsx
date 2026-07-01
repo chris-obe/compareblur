@@ -5,6 +5,7 @@ import {
   useState,
   type Dispatch,
   type DragEvent,
+  type MouseEvent as ReactMouseEvent,
   type ReactNode,
   type RefObject,
   type SetStateAction,
@@ -12,19 +13,25 @@ import {
 import { useAuth0 } from '@auth0/auth0-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
+  Check,
+  ChevronDown,
+  ChevronRight,
   Code2,
+  EllipsisVertical,
   Eye,
-  Edit3,
   FolderOpen,
+  Globe,
   GitCompare,
   Grid3X3,
   ImagePlus,
+  Lock,
   Plus,
   RefreshCw,
   Rows3,
   Save,
   Send,
   Settings2,
+  Square,
   Upload,
   X,
 } from 'lucide-react';
@@ -35,6 +42,7 @@ import {
   listAccountGalleryAlbums,
   listAccountGalleryPhotos,
   publishAccountGalleryPhoto,
+  unpublishAccountGalleryPhoto,
   updateAccountGalleryAlbum,
   updateAccountGalleryPhoto,
   uploadAccountGalleryPhoto,
@@ -71,6 +79,8 @@ interface AlbumDraft {
   title: string;
   description: string;
   status: GalleryAlbumStatus;
+  hasPassword: boolean;
+  albumPassword: string;
   coverPhotoId: string;
   photoIds: string[];
 }
@@ -94,6 +104,8 @@ const EMPTY_ALBUM: AlbumDraft = {
   title: '',
   description: '',
   status: 'draft',
+  hasPassword: false,
+  albumPassword: '',
   coverPhotoId: '',
   photoIds: [],
 };
@@ -130,6 +142,7 @@ export function AccountAlbumsManager({ mode, routeAlbumSlug }: Props) {
   const [photos, setPhotos] = useState<AdminGalleryPhoto[]>([]);
   const [selectedAlbumSlug, setSelectedAlbumSlug] = useState('');
   const [selectedPhotoIds, setSelectedPhotoIds] = useState<Set<string>>(new Set());
+  const [selectionAnchorId, setSelectionAnchorId] = useState<string | null>(null);
   const [albumDraft, setAlbumDraft] = useState<AlbumDraft>(EMPTY_ALBUM);
   const [photoDrafts, setPhotoDrafts] = useState<Record<string, PhotoDraft>>({});
   const [pageSurface, setPageSurface] = useState<'albums' | 'all'>(() => {
@@ -242,6 +255,10 @@ export function AccountAlbumsManager({ mode, routeAlbumSlug }: Props) {
   useEffect(() => {
     window.localStorage.setItem('blur.albumPageSurface', pageSurface);
   }, [pageSurface]);
+
+  useEffect(() => {
+    if (selectedPhotoIds.size === 0) setSelectionAnchorId(null);
+  }, [selectedPhotoIds]);
 
   useEffect(() => {
     writeAlbumPreferences(preferences);
@@ -401,6 +418,21 @@ export function AccountAlbumsManager({ mode, routeAlbumSlug }: Props) {
     }
   };
 
+  const patchAlbum = async (
+    slug: string,
+    updates: Partial<GalleryAlbum> & { photoIds?: string[]; albumPassword?: string | null },
+  ) => {
+    const token = await getToken();
+    setAccessToken(token);
+    const updated = await updateAccountGalleryAlbum(slug, updates, token);
+    setAlbums((current) => replaceAlbum(current, updated));
+    if (selectedAlbumSlug === slug) {
+      setSelectedAlbumSlug(updated.slug);
+      setAlbumDraft(draftFromAlbum(updated));
+    }
+    return updated;
+  };
+
   const publishSelected = async () => {
     setBusy(true);
     setError(null);
@@ -412,6 +444,22 @@ export function AccountAlbumsManager({ mode, routeAlbumSlug }: Props) {
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Publish request failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const unpublishSelected = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const token = await getToken();
+      setAccessToken(token);
+      for (const id of selectedPhotoIds) await unpublishAccountGalleryPhoto(id, token);
+      setSelectedPhotoIds(new Set());
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unpublish request failed');
     } finally {
       setBusy(false);
     }
@@ -460,6 +508,7 @@ export function AccountAlbumsManager({ mode, routeAlbumSlug }: Props) {
       albumPhotos={albumPhotos}
       selectedAlbumSlug={selectedAlbumSlug}
       selectedPhotoIds={selectedPhotoIds}
+      selectionAnchorId={selectionAnchorId}
       albumDraft={albumDraft}
       photoDrafts={photoDrafts}
       accessToken={accessToken}
@@ -473,6 +522,7 @@ export function AccountAlbumsManager({ mode, routeAlbumSlug }: Props) {
       setAlbumDraft={setAlbumDraft}
       setDrafts={setPhotoDrafts}
       setSelectedPhotoIds={setSelectedPhotoIds}
+      setSelectionAnchorId={setSelectionAnchorId}
       uploadFiles={uploadFiles}
       saveAlbum={saveAlbum}
       savePhoto={savePhoto}
@@ -481,14 +531,18 @@ export function AccountAlbumsManager({ mode, routeAlbumSlug }: Props) {
     />
   );
 
+  const showPageHeader = !(mode === 'page' && selectedAlbum);
+
   return (
     <section className={mode === 'page' ? 'flex h-full min-h-0 flex-col gap-5' : 'space-y-5'}>
-      <div className="shrink-0 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-        <div>
-          <div className="label mb-2">Albums</div>
-          <h2 className="text-2xl font-bold tracking-tight">Your photos and albums</h2>
+      {showPageHeader && (
+        <div className="shrink-0 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <div className="label mb-2">Albums</div>
+            <h2 className="text-2xl font-bold tracking-tight">Your photos and albums</h2>
+          </div>
         </div>
-      </div>
+      )}
 
       {mode === 'page' && (
         <div className="min-h-0 flex-1">
@@ -501,6 +555,7 @@ export function AccountAlbumsManager({ mode, routeAlbumSlug }: Props) {
             pageSurface={pageSurface}
             preferences={preferences}
             selectedPhotoIds={selectedPhotoIds}
+            selectionAnchorId={selectionAnchorId}
             selectedApprovedCount={selectedApprovedPhotoIds.length}
             accessToken={accessToken}
             busy={busy}
@@ -513,12 +568,15 @@ export function AccountAlbumsManager({ mode, routeAlbumSlug }: Props) {
             setDetailMode={(nextMode) => setSearchParams(nextMode === 'edit' ? { mode: 'edit' } : {})}
             setPageSurface={setPageSurface}
             setSelectedPhotoIds={setSelectedPhotoIds}
+            setSelectionAnchorId={setSelectionAnchorId}
             setViewPhotoId={setViewPhotoId}
             publishSelected={publishSelected}
+            unpublishSelected={unpublishSelected}
+            patchAlbum={patchAlbum}
             onEmbedSelected={openSelectionEmbed}
             onEmbedAlbum={openAlbumEmbed}
+            goToAlbums={() => navigate('/albums')}
             openAlbum={(album) => navigate(`/albums/${encodeURIComponent(album.slug)}`)}
-            openManage={() => setSearchParams({ mode: 'edit' })}
           />
         </div>
       )}
@@ -583,6 +641,7 @@ function AlbumBuilder({
   albumPhotos,
   selectedAlbumSlug,
   selectedPhotoIds,
+  selectionAnchorId,
   albumDraft,
   photoDrafts,
   accessToken,
@@ -596,6 +655,7 @@ function AlbumBuilder({
   setAlbumDraft,
   setDrafts,
   setSelectedPhotoIds,
+  setSelectionAnchorId,
   uploadFiles,
   saveAlbum,
   savePhoto,
@@ -609,6 +669,7 @@ function AlbumBuilder({
   albumPhotos: AdminGalleryPhoto[];
   selectedAlbumSlug: string;
   selectedPhotoIds: Set<string>;
+  selectionAnchorId: string | null;
   albumDraft: AlbumDraft;
   photoDrafts: Record<string, PhotoDraft>;
   accessToken: string | null;
@@ -622,6 +683,7 @@ function AlbumBuilder({
   setAlbumDraft: Dispatch<SetStateAction<AlbumDraft>>;
   setDrafts: Dispatch<SetStateAction<Record<string, PhotoDraft>>>;
   setSelectedPhotoIds: Dispatch<SetStateAction<Set<string>>>;
+  setSelectionAnchorId: Dispatch<SetStateAction<string | null>>;
   uploadFiles: (files: FileList | File[] | null) => Promise<void>;
   saveAlbum: () => Promise<void>;
   savePhoto: (photo: AdminGalleryPhoto) => Promise<void>;
@@ -715,7 +777,7 @@ function AlbumBuilder({
               >
                 <div className="truncate text-xs font-bold">{album.title}</div>
                 <div className="mt-1 text-[10px] uppercase tracking-wide opacity-70">
-                  {album.photos.length} photos · {album.status}
+                  {album.photos.length} photos · {albumVisibilityLabel(album.status)}
                 </div>
               </button>
             ))}
@@ -801,9 +863,11 @@ function AlbumBuilder({
               photos={albumPhotos}
               drafts={photoDrafts}
               selectedPhotoIds={selectedPhotoIds}
+              selectionAnchorId={selectionAnchorId}
               setAlbumDraft={setAlbumDraft}
               setDrafts={setDrafts}
               setSelectedPhotoIds={setSelectedPhotoIds}
+              setSelectionAnchorId={setSelectionAnchorId}
               savePhoto={savePhoto}
               busy={busy}
               accessToken={accessToken}
@@ -814,12 +878,23 @@ function AlbumBuilder({
         <aside className={optionsClass}>
           <section className="border border-line p-3">
             <div className="label mb-3">Album options</div>
-            <SelectField
-              label="State"
-              value={albumDraft.status}
-              options={['draft', 'published']}
-              onChange={(value) => setAlbumDraft((current) => ({ ...current, status: value as GalleryAlbumStatus }))}
-            />
+            <div>
+              <span className="label mb-2 block">Visibility</span>
+              <div className="grid grid-cols-2 gap-2">
+                <VisibilityChoiceButton
+                  active={albumDraft.status === 'draft'}
+                  icon={<Lock size={13} strokeWidth={1.6} />}
+                  label="Private"
+                  onClick={() => setAlbumDraft((current) => ({ ...current, status: 'draft' }))}
+                />
+                <VisibilityChoiceButton
+                  active={albumDraft.status === 'published'}
+                  icon={<Globe size={13} strokeWidth={1.6} />}
+                  label="Public"
+                  onClick={() => setAlbumDraft((current) => ({ ...current, status: 'published' }))}
+                />
+              </div>
+            </div>
             <TextField
               label="Slug"
               value={albumDraft.slug}
@@ -827,6 +902,37 @@ function AlbumBuilder({
               placeholder="Generated from title"
               className="mt-3"
             />
+            <label className="mt-3 block">
+              <span className="label mb-2 block">Album password</span>
+              <input
+                type="password"
+                value={albumDraft.albumPassword}
+                placeholder={albumDraft.hasPassword ? 'Current password stays until replaced' : 'Optional'}
+                onChange={(event) => setAlbumDraft((current) => ({
+                  ...current,
+                  albumPassword: event.target.value,
+                  hasPassword: event.target.value.trim() ? true : current.hasPassword,
+                }))}
+                className="h-9 w-full border border-line bg-transparent px-2 text-xs outline-none focus:border-line-strong"
+              />
+              <div className="mt-2 flex items-center justify-between gap-2 text-[11px] uppercase tracking-[0.16em] text-muted">
+                <span>{albumDraft.hasPassword ? 'Password protection enabled' : 'No password set'}</span>
+                {albumDraft.hasPassword && (
+                  <button
+                    type="button"
+                    onClick={() => setAlbumDraft((current) => ({ ...current, hasPassword: false, albumPassword: '' }))}
+                    className="border border-line px-2 py-1 transition-colors hover:border-line-strong"
+                  >
+                    Remove
+                  </button>
+                )}
+              </div>
+            </label>
+            {selectedAlbumSlug && albumDraft.status === 'published' && (
+              <div className="mt-3 border border-line bg-faint px-3 py-2 text-[11px] uppercase tracking-[0.16em] text-muted">
+                Public link: /g/{albumDraft.slug || selectedAlbumSlug}
+              </div>
+            )}
             <label className="mt-3 block">
               <span className="label mb-2 block">Cover</span>
               <select
@@ -897,6 +1003,7 @@ function AlbumViewer({
   pageSurface,
   preferences,
   selectedPhotoIds,
+  selectionAnchorId,
   selectedApprovedCount,
   accessToken,
   busy,
@@ -909,12 +1016,15 @@ function AlbumViewer({
   setDetailMode,
   setPageSurface,
   setSelectedPhotoIds,
+  setSelectionAnchorId,
   setViewPhotoId,
   publishSelected,
+  unpublishSelected,
+  patchAlbum,
   onEmbedSelected,
   onEmbedAlbum,
+  goToAlbums,
   openAlbum,
-  openManage,
 }: {
   albums: GalleryAlbum[];
   photos: AdminGalleryPhoto[];
@@ -924,6 +1034,7 @@ function AlbumViewer({
   pageSurface: 'albums' | 'all';
   preferences: AlbumDisplayPreferences;
   selectedPhotoIds: Set<string>;
+  selectionAnchorId: string | null;
   selectedApprovedCount: number;
   accessToken: string | null;
   busy: boolean;
@@ -936,18 +1047,49 @@ function AlbumViewer({
   setDetailMode: (mode: AlbumDefaultMode) => void;
   setPageSurface: Dispatch<SetStateAction<'albums' | 'all'>>;
   setSelectedPhotoIds: Dispatch<SetStateAction<Set<string>>>;
+  setSelectionAnchorId: Dispatch<SetStateAction<string | null>>;
   setViewPhotoId: Dispatch<SetStateAction<string | null>>;
   publishSelected: () => Promise<void>;
+  unpublishSelected: () => Promise<void>;
+  patchAlbum: (slug: string, updates: Partial<GalleryAlbum> & { photoIds?: string[]; albumPassword?: string | null }) => Promise<GalleryAlbum>;
   onEmbedSelected: () => void;
   onEmbedAlbum: (album: GalleryAlbum) => void;
+  goToAlbums: () => void;
   openAlbum: (album: GalleryAlbum) => void;
-  openManage: () => void;
 }) {
   const selectedAlbumPhotos = selectedAlbum
     ? selectedAlbum.photos
         .map((item) => photos.find((photo) => photo.id === item.id))
         .filter((photo): photo is AdminGalleryPhoto => !!photo)
     : [];
+  const visiblePhotoIds = selectedAlbum ? selectedAlbumPhotos.map((photo) => photo.id) : pageSurface === 'all' ? photos.map((photo) => photo.id) : [];
+  const allVisibleSelected = visiblePhotoIds.length > 0 && visiblePhotoIds.every((id) => selectedPhotoIds.has(id));
+  const selectedPhotos = photos.filter((photo) => selectedPhotoIds.has(photo.id));
+  const selectedPublishedCount = selectedPhotos.filter((photo) => photo.status === 'approved').length;
+
+  const setAllVisible = (checked: boolean) => {
+    setSelectedPhotoIds(checked ? new Set(visiblePhotoIds) : new Set());
+    setSelectionAnchorId(checked ? visiblePhotoIds[0] ?? null : null);
+  };
+
+  const togglePhotoSelection = (photoId: string, orderedIds: string[], shiftKey: boolean) => {
+    const nextChecked = !selectedPhotoIds.has(photoId);
+    const { next, anchor } = updatePhotoSelection(
+      selectedPhotoIds,
+      orderedIds,
+      photoId,
+      nextChecked,
+      shiftKey,
+      selectionAnchorId,
+    );
+    setSelectedPhotoIds(next);
+    setSelectionAnchorId(anchor);
+  };
+
+  const updateVisibility = async (status: GalleryAlbumStatus) => {
+    if (!selectedAlbum || busy) return;
+    await patchAlbum(selectedAlbum.slug, { status });
+  };
 
   if (albums.length === 0 && photos.length === 0) {
     return (
@@ -974,53 +1116,89 @@ function AlbumViewer({
     return (
       <div className="space-y-5">
         {error && <ErrorBanner message={error} />}
-        <AlbumActionBar
-          surface={pageSurface}
-          detailMode={detailMode}
-          selectedCount={selectedPhotoIds.size}
-          selectedApprovedCount={selectedApprovedCount}
-          visibleCount={selectedAlbumPhotos.length}
-          embedReady={embedReady}
-          onSurface={(surface) => {
-            setPageSurface(surface);
-            if (surface === 'all') selectAlbum(null);
-          }}
-          onReload={() => void reload()}
-          onNew={startNewAlbum}
-          onMode={setDetailMode}
-          onSubmit={() => void publishSelected()}
-          onEmbedSelected={onEmbedSelected}
-          busy={busy}
-          inAlbum
-        />
-
-        <div className="flex flex-col gap-3 border-b border-line pb-4 md:flex-row md:items-end md:justify-between">
-          <div className="min-w-0">
-            <div className="label mb-2">{selectedAlbum.status}</div>
-            <h3 className="truncate text-3xl font-bold tracking-tight">{selectedAlbum.title}</h3>
-            {selectedAlbum.description && <p className="mt-2 max-w-2xl truncate text-sm text-muted">{selectedAlbum.description}</p>}
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button
-              onClick={() => onEmbedAlbum(selectedAlbum)}
-              disabled={!embedReady || selectedAlbum.status !== 'published'}
-              title={selectedAlbum.status === 'published' ? 'Copy album iframe code' : 'Publish album to embed'}
+        <div className="space-y-4 border-b border-line pb-4">
+          <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-muted">
+            <button
+              type="button"
+              onClick={() => {
+                selectAlbum(null);
+                goToAlbums();
+              }}
+              className="transition-colors hover:text-fg"
+              title="Back to albums"
             >
-              <Code2 size={14} strokeWidth={1.5} />
-              Embed album
-            </Button>
-            <Button onClick={openManage}>
-              <Edit3 size={14} strokeWidth={1.5} />
-              Edit
-            </Button>
+              Albums
+            </button>
+            <ChevronRight size={12} strokeWidth={1.5} />
+            <span className="text-fg">{selectedAlbum.title}</span>
           </div>
+
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+            <div className="min-w-0">
+              <h3 className="truncate text-3xl font-bold tracking-tight">{selectedAlbum.title}</h3>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <AlbumVisibilityDropdown
+                value={selectedAlbum.status}
+                busy={busy}
+                onChange={(status) => void updateVisibility(status)}
+              />
+              <div className="flex border border-line">
+                <ActionIconButton label="View album" active={detailMode === 'view'} onClick={() => setDetailMode('view')}>
+                  <Eye size={14} strokeWidth={1.5} />
+                </ActionIconButton>
+                <ActionIconButton label="Album settings" active={detailMode === 'edit'} onClick={() => setDetailMode('edit')}>
+                  <Settings2 size={14} strokeWidth={1.5} />
+                </ActionIconButton>
+              </div>
+              <Button
+                onClick={() => onEmbedAlbum(selectedAlbum)}
+                disabled={!embedReady || selectedAlbum.status !== 'published' || selectedAlbum.hasPassword}
+                title={
+                  selectedAlbum.hasPassword
+                    ? 'Password-protected albums are not embeddable'
+                    : selectedAlbum.status === 'published'
+                      ? 'Copy album iframe code'
+                      : 'Make the album public to embed it'
+                }
+              >
+                <Code2 size={14} strokeWidth={1.5} />
+                Embed album
+              </Button>
+            </div>
+          </div>
+
+          {selectedAlbum.description && <p className="max-w-3xl text-sm text-muted">{selectedAlbum.description}</p>}
+
+          <AlbumActionBar
+            surface={pageSurface}
+            selectedCount={selectedPhotoIds.size}
+            selectedApprovedCount={selectedApprovedCount}
+            selectedPublishedCount={selectedPublishedCount}
+            visibleCount={selectedAlbumPhotos.length}
+            busy={busy}
+            embedReady={embedReady}
+            allVisibleSelected={allVisibleSelected}
+            hasSelectablePhotos={visiblePhotoIds.length > 0}
+            onSurface={(surface) => {
+              setPageSurface(surface);
+              if (surface === 'all') selectAlbum(null);
+            }}
+            onReload={() => void reload()}
+            onNew={startNewAlbum}
+            onSubmit={() => void publishSelected()}
+            onUnpublish={() => void unpublishSelected()}
+            onEmbedSelected={onEmbedSelected}
+            onSelectAll={() => setAllVisible(!allVisibleSelected)}
+            inAlbum
+          />
         </div>
 
         <PhotoGrid
           photos={selectedAlbumPhotos}
           accessToken={accessToken}
           selectedPhotoIds={selectedPhotoIds}
-          setSelectedPhotoIds={setSelectedPhotoIds}
+          onToggleSelection={(photoId, orderedIds, shiftKey) => togglePhotoSelection(photoId, orderedIds, shiftKey)}
           setViewPhotoId={setViewPhotoId}
           showTitles={preferences.showPhotoTitles}
           color
@@ -1035,18 +1213,21 @@ function AlbumViewer({
         {error && <ErrorBanner message={error} />}
         <AlbumActionBar
           surface={pageSurface}
-          detailMode={detailMode}
           selectedCount={selectedPhotoIds.size}
           selectedApprovedCount={selectedApprovedCount}
+          selectedPublishedCount={selectedPublishedCount}
           visibleCount={photos.length}
+          busy={busy}
           embedReady={embedReady}
+          allVisibleSelected={allVisibleSelected}
+          hasSelectablePhotos={visiblePhotoIds.length > 0}
           onSurface={setPageSurface}
           onReload={() => void reload()}
           onNew={startNewAlbum}
-          onMode={setDetailMode}
           onSubmit={() => void publishSelected()}
+          onUnpublish={() => void unpublishSelected()}
           onEmbedSelected={onEmbedSelected}
-          busy={busy}
+          onSelectAll={() => setAllVisible(!allVisibleSelected)}
         />
         <div className="columns-2 gap-3 sm:columns-3 xl:columns-4">
           {photos.map((photo) => (
@@ -1060,14 +1241,12 @@ function AlbumViewer({
                 >
                   <AccountPhotoImage photo={photo} accessToken={accessToken} className="w-full object-cover" />
                 </button>
-                <label className="absolute left-2 top-2 flex h-7 w-7 items-center justify-center border border-line bg-surface/90">
-                  <input
-                    type="checkbox"
-                    checked={selectedPhotoIds.has(photo.id)}
-                    onChange={(event) => setSelectedPhotoIds((current) => toggleSetValue(current, photo.id, event.target.checked))}
-                    aria-label={`Select ${photo.title}`}
-                  />
-                </label>
+                <SelectionPill
+                  selected={selectedPhotoIds.has(photo.id)}
+                  label={`Select ${photo.title}`}
+                  onClick={(event) => togglePhotoSelection(photo.id, photos.map((item) => item.id), event.shiftKey)}
+                  className="absolute left-2 top-2"
+                />
               </div>
               {preferences.showPhotoTitles && (
                 <div className="border-t border-line p-2">
@@ -1091,18 +1270,21 @@ function AlbumViewer({
       {error && <ErrorBanner message={error} />}
       <AlbumActionBar
         surface={pageSurface}
-        detailMode={detailMode}
         selectedCount={selectedPhotoIds.size}
         selectedApprovedCount={selectedApprovedCount}
+        selectedPublishedCount={selectedPublishedCount}
         visibleCount={albums.length}
+        busy={busy}
         embedReady={embedReady}
+        allVisibleSelected={false}
+        hasSelectablePhotos={false}
         onSurface={setPageSurface}
         onReload={() => void reload()}
         onNew={startNewAlbum}
-        onMode={setDetailMode}
         onSubmit={() => void publishSelected()}
+        onUnpublish={() => void unpublishSelected()}
         onEmbedSelected={onEmbedSelected}
-        busy={busy}
+        onSelectAll={() => undefined}
       />
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {albums.map((album) => (
@@ -1133,44 +1315,62 @@ function AlbumViewer({
 
 function AlbumActionBar({
   surface,
-  detailMode,
   selectedCount,
   selectedApprovedCount,
+  selectedPublishedCount,
   visibleCount,
   busy,
   embedReady,
+  allVisibleSelected,
+  hasSelectablePhotos,
   inAlbum = false,
   onSurface,
-  onMode,
   onReload,
   onNew,
   onSubmit,
+  onUnpublish,
   onEmbedSelected,
+  onSelectAll,
 }: {
   surface: 'albums' | 'all';
-  detailMode: AlbumDefaultMode;
   selectedCount: number;
   selectedApprovedCount: number;
+  selectedPublishedCount: number;
   visibleCount: number;
   busy: boolean;
   embedReady: boolean;
+  allVisibleSelected: boolean;
+  hasSelectablePhotos: boolean;
   inAlbum?: boolean;
   onSurface: (surface: 'albums' | 'all') => void;
-  onMode: (mode: AlbumDefaultMode) => void;
   onReload: () => void;
   onNew: () => void;
   onSubmit: () => void;
+  onUnpublish: () => void;
   onEmbedSelected: () => void;
+  onSelectAll: () => void;
 }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
   const embedSelectedLabel = selectedCount > 0 && selectedApprovedCount === 0
     ? 'No approved photos selected'
     : 'Embed selected';
+
+  useEffect(() => {
+    if (!menuOpen) return undefined;
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) setMenuOpen(false);
+    };
+    window.addEventListener('mousedown', handlePointerDown);
+    return () => window.removeEventListener('mousedown', handlePointerDown);
+  }, [menuOpen]);
+
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 border border-line px-3 py-2">
+    <div className="flex flex-wrap items-center justify-between gap-3 border border-line px-3 py-2.5">
       <div className="text-xs text-muted">
         {selectedCount > 0 ? `${selectedCount} selected` : `${visibleCount} visible`}
       </div>
-      <div className="flex flex-wrap items-center gap-1">
+      <div className="flex flex-wrap items-center gap-1.5">
         {!inAlbum && (
           <div className="mr-1 flex border border-line">
             <ActionIconButton label="Album grid" active={surface === 'albums'} onClick={() => onSurface('albums')}>
@@ -1181,15 +1381,15 @@ function AlbumActionBar({
             </ActionIconButton>
           </div>
         )}
-        {inAlbum && (
-          <div className="mr-1 flex border border-line">
-            <ActionIconButton label="View album" active={detailMode === 'view'} onClick={() => onMode('view')}>
-              <Eye size={14} strokeWidth={1.5} />
-            </ActionIconButton>
-            <ActionIconButton label="Edit album" active={detailMode === 'edit'} onClick={() => onMode('edit')}>
-              <Edit3 size={14} strokeWidth={1.5} />
-            </ActionIconButton>
-          </div>
+        {hasSelectablePhotos && (
+          <ActionTextButton
+            label={allVisibleSelected ? 'Clear visible selection' : 'Select all visible'}
+            active={allVisibleSelected}
+            onClick={onSelectAll}
+          >
+            {allVisibleSelected ? <Check size={13} strokeWidth={1.7} /> : <Square size={13} strokeWidth={1.6} />}
+            Select all
+          </ActionTextButton>
         )}
         <ActionIconButton label="Reload" onClick={onReload} disabled={busy}>
           <RefreshCw size={14} strokeWidth={1.5} />
@@ -1205,9 +1405,46 @@ function AlbumActionBar({
         >
           <Code2 size={14} strokeWidth={1.5} />
         </ActionIconButton>
-        <ActionIconButton label="Submit selected" onClick={onSubmit} disabled={busy || selectedCount === 0} active={selectedCount > 0}>
-          <Send size={14} strokeWidth={1.5} />
-        </ActionIconButton>
+        {hasSelectablePhotos && (
+          <div ref={menuRef} className="relative">
+            <ActionIconButton
+              label="Selection actions"
+              onClick={() => setMenuOpen((current) => !current)}
+              active={menuOpen}
+              disabled={busy || selectedCount === 0}
+            >
+              <EllipsisVertical size={14} strokeWidth={1.5} />
+            </ActionIconButton>
+            {menuOpen && (
+              <div className="absolute right-0 top-[calc(100%+0.45rem)] z-40 flex min-w-48 flex-col border border-line bg-surface p-1 shadow-[0_12px_40px_rgba(0,0,0,0.24)]">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onSubmit();
+                  }}
+                  disabled={busy || selectedCount === 0}
+                  className="flex items-center justify-between gap-3 px-3 py-2 text-left text-xs uppercase tracking-[0.18em] text-fg transition-colors hover:bg-faint disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <span>Publish photos</span>
+                  <Send size={13} strokeWidth={1.5} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onUnpublish();
+                  }}
+                  disabled={busy || selectedCount === 0 || selectedPublishedCount === 0}
+                  className="flex items-center justify-between gap-3 px-3 py-2 text-left text-xs uppercase tracking-[0.18em] text-fg transition-colors hover:bg-faint disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <span>Unpublish photos</span>
+                  <Lock size={13} strokeWidth={1.5} />
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1243,6 +1480,124 @@ function ActionIconButton({
         {label}
       </span>
     </button>
+  );
+}
+
+function ActionTextButton({
+  label,
+  active,
+  onClick,
+  children,
+}: {
+  label: string;
+  active?: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      title={label}
+      aria-label={label}
+      onClick={onClick}
+      className={[
+        'inline-flex h-9 items-center gap-2 border px-3 text-[11px] uppercase tracking-[0.18em] transition-colors',
+        active ? 'border-fg bg-fg text-bg' : 'border-line text-fg hover:border-line-strong',
+      ].join(' ')}
+    >
+      {children}
+    </button>
+  );
+}
+
+function SelectionPill({
+  selected,
+  label,
+  onClick,
+  className = '',
+}: {
+  selected: boolean;
+  label: string;
+  onClick: (event: ReactMouseEvent<HTMLButtonElement>) => void;
+  className?: string;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      onClick={onClick}
+      className={[
+        'inline-flex h-8 min-w-8 items-center justify-center border px-2 text-[10px] uppercase tracking-[0.18em] backdrop-blur-sm transition-colors',
+        selected ? 'border-fg bg-fg text-bg' : 'border-line bg-surface/90 text-fg hover:border-line-strong',
+        className,
+      ].join(' ')}
+    >
+      {selected ? <Check size={12} strokeWidth={1.9} /> : <Square size={12} strokeWidth={1.6} />}
+    </button>
+  );
+}
+
+function AlbumVisibilityDropdown({
+  value,
+  busy,
+  onChange,
+}: {
+  value: GalleryAlbumStatus;
+  busy?: boolean;
+  onChange: (value: GalleryAlbumStatus) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!ref.current?.contains(event.target as Node)) setOpen(false);
+    };
+    window.addEventListener('mousedown', handlePointerDown);
+    return () => window.removeEventListener('mousedown', handlePointerDown);
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        disabled={busy}
+        className="inline-flex h-9 items-center gap-2 border border-line px-3 text-[11px] uppercase tracking-[0.18em] transition-colors hover:border-line-strong disabled:opacity-40"
+      >
+        {value === 'published' ? <Globe size={13} strokeWidth={1.6} /> : <Lock size={13} strokeWidth={1.6} />}
+        {albumVisibilityLabel(value)}
+        <ChevronDown size={13} strokeWidth={1.5} />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-[calc(100%+0.45rem)] z-40 flex min-w-44 flex-col border border-line bg-surface p-1 shadow-[0_12px_40px_rgba(0,0,0,0.24)]">
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false);
+              onChange('draft');
+            }}
+            className="flex items-center justify-between gap-3 px-3 py-2 text-left text-xs uppercase tracking-[0.18em] transition-colors hover:bg-faint"
+          >
+            <span>Private</span>
+            <Lock size={13} strokeWidth={1.5} />
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false);
+              onChange('published');
+            }}
+            className="flex items-center justify-between gap-3 px-3 py-2 text-left text-xs uppercase tracking-[0.18em] transition-colors hover:bg-faint"
+          >
+            <span>Public</span>
+            <Globe size={13} strokeWidth={1.5} />
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1283,7 +1638,7 @@ function PhotoGrid({
   photos,
   accessToken,
   selectedPhotoIds,
-  setSelectedPhotoIds,
+  onToggleSelection,
   setViewPhotoId,
   showTitles,
   color,
@@ -1291,11 +1646,12 @@ function PhotoGrid({
   photos: AdminGalleryPhoto[];
   accessToken: string | null;
   selectedPhotoIds: Set<string>;
-  setSelectedPhotoIds: Dispatch<SetStateAction<Set<string>>>;
+  onToggleSelection: (photoId: string, orderedIds: string[], shiftKey: boolean) => void;
   setViewPhotoId: Dispatch<SetStateAction<string | null>>;
   showTitles: boolean;
   color: boolean;
 }) {
+  const orderedIds = photos.map((photo) => photo.id);
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
       {photos.map((photo) => (
@@ -1309,14 +1665,12 @@ function PhotoGrid({
             >
               <AccountPhotoImage photo={photo} accessToken={accessToken} className={['aspect-square w-full object-cover', color ? '' : 'grayscale'].join(' ')} />
             </button>
-            <label className="absolute left-2 top-2 flex h-7 w-7 items-center justify-center border border-line bg-surface/90">
-              <input
-                type="checkbox"
-                checked={selectedPhotoIds.has(photo.id)}
-                onChange={(event) => setSelectedPhotoIds((current) => toggleSetValue(current, photo.id, event.target.checked))}
-                aria-label={`Select ${photo.title}`}
-              />
-            </label>
+            <SelectionPill
+              selected={selectedPhotoIds.has(photo.id)}
+              label={`Select ${photo.title}`}
+              onClick={(event) => onToggleSelection(photo.id, orderedIds, event.shiftKey)}
+              className="absolute left-2 top-2"
+            />
           </div>
           {showTitles && (
             <div className="border-t border-line p-2">
@@ -1440,9 +1794,11 @@ function PhotoBulkTable({
   photos,
   drafts,
   selectedPhotoIds,
+  selectionAnchorId,
   setAlbumDraft,
   setDrafts,
   setSelectedPhotoIds,
+  setSelectionAnchorId,
   savePhoto,
   busy,
   accessToken,
@@ -1450,25 +1806,39 @@ function PhotoBulkTable({
   photos: AdminGalleryPhoto[];
   drafts: Record<string, PhotoDraft>;
   selectedPhotoIds: Set<string>;
+  selectionAnchorId: string | null;
   setAlbumDraft: Dispatch<SetStateAction<AlbumDraft>>;
   setDrafts: Dispatch<SetStateAction<Record<string, PhotoDraft>>>;
   setSelectedPhotoIds: Dispatch<SetStateAction<Set<string>>>;
+  setSelectionAnchorId: Dispatch<SetStateAction<string | null>>;
   savePhoto: (photo: AdminGalleryPhoto) => Promise<void>;
   busy: boolean;
   accessToken: string | null;
 }) {
+  const orderedIds = photos.map((photo) => photo.id);
   return (
     <div className="divide-y divide-line border border-line">
       {photos.map((photo) => {
         const draft = drafts[photo.id] ?? draftFromPhoto(photo);
         return (
           <div key={photo.id} className="grid gap-3 p-3 lg:grid-cols-[1.25rem_7rem_minmax(0,1fr)_auto] lg:items-start">
-            <input
-              type="checkbox"
-              checked={selectedPhotoIds.has(photo.id)}
-              onChange={(event) => setSelectedPhotoIds((current) => toggleSetValue(current, photo.id, event.target.checked))}
+            <SelectionPill
+              selected={selectedPhotoIds.has(photo.id)}
+              label={`Select ${photo.title}`}
+              onClick={(event) => {
+                const nextChecked = !selectedPhotoIds.has(photo.id);
+                const { next, anchor } = updatePhotoSelection(
+                  selectedPhotoIds,
+                  orderedIds,
+                  photo.id,
+                  nextChecked,
+                  event.shiftKey,
+                  selectionAnchorId,
+                );
+                setSelectedPhotoIds(next);
+                setSelectionAnchorId(anchor);
+              }}
               className="mt-1"
-              aria-label={`Select ${photo.title}`}
             />
 
             <div className="flex gap-3 lg:block">
@@ -1598,7 +1968,7 @@ function AccountLightboxInfo({
           Submit to public gallery
         </Button>
         <Button className="w-full" onClick={onEdit}>
-          <Edit3 size={14} strokeWidth={1.5} />
+          <Settings2 size={14} strokeWidth={1.5} />
           Edit details
         </Button>
       </div>
@@ -1632,14 +2002,29 @@ function TextField({
   );
 }
 
-function SelectField({ label, value, options, onChange }: { label: string; value: string; options: string[]; onChange: (value: string) => void }) {
+function VisibilityChoiceButton({
+  active,
+  icon,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  icon: ReactNode;
+  label: string;
+  onClick: () => void;
+}) {
   return (
-    <label className="block">
-      <span className="label mb-2 block">{label}</span>
-      <select value={value} onChange={(event) => onChange(event.target.value)} className="h-9 w-full border border-line bg-transparent px-2 text-xs outline-none focus:border-line-strong">
-        {options.map((option) => <option key={option} value={option}>{option}</option>)}
-      </select>
-    </label>
+    <button
+      type="button"
+      onClick={onClick}
+      className={[
+        'inline-flex h-9 items-center justify-center gap-2 border px-3 text-[11px] uppercase tracking-[0.18em] transition-colors',
+        active ? 'border-fg bg-fg text-bg' : 'border-line text-fg hover:border-line-strong',
+      ].join(' ')}
+    >
+      {icon}
+      {label}
+    </button>
   );
 }
 
@@ -1730,6 +2115,8 @@ function draftFromAlbum(album: GalleryAlbum): AlbumDraft {
     title: album.title,
     description: album.description,
     status: album.status,
+    hasPassword: album.hasPassword === true,
+    albumPassword: '',
     coverPhotoId: album.coverPhotoId ?? '',
     photoIds: album.photos.map((photo) => photo.id),
   };
@@ -1844,13 +2231,17 @@ function albumSubtitle(album: GalleryAlbum, field: AlbumSubtitleField): string {
     case 'photo-count':
       return `${album.photos.length} ${album.photos.length === 1 ? 'photo' : 'photos'}`;
     case 'status':
-      return album.status;
+      return albumVisibilityLabel(album.status);
     case 'description':
       return album.description || `${album.photos.length} ${album.photos.length === 1 ? 'photo' : 'photos'}`;
     case 'updated':
     default:
       return `Updated ${formatDate(album.updatedAt)}`;
   }
+}
+
+function albumVisibilityLabel(status: GalleryAlbumStatus) {
+  return status === 'published' ? 'Public' : 'Private';
 }
 
 function formatDate(value?: string | null): string {
@@ -1864,8 +2255,8 @@ function formatDate(value?: string | null): string {
   });
 }
 
-function albumPayload(draft: AlbumDraft): Partial<GalleryAlbum> & { photoIds: string[] } {
-  return {
+function albumPayload(draft: AlbumDraft): Partial<GalleryAlbum> & { photoIds: string[]; albumPassword?: string | null } {
+  const payload: Partial<GalleryAlbum> & { photoIds: string[]; albumPassword?: string | null } = {
     slug: draft.slug,
     title: draft.title,
     description: draft.description,
@@ -1873,6 +2264,13 @@ function albumPayload(draft: AlbumDraft): Partial<GalleryAlbum> & { photoIds: st
     coverPhotoId: draft.coverPhotoId || null,
     photoIds: draft.photoIds,
   };
+  const trimmedPassword = draft.albumPassword.trim();
+  if (trimmedPassword) {
+    payload.albumPassword = trimmedPassword;
+  } else if (!draft.hasPassword) {
+    payload.albumPassword = null;
+  }
+  return payload;
 }
 
 function addPhotosToAlbumDraft(draft: AlbumDraft, photoIds: string[]): AlbumDraft {
@@ -1913,6 +2311,44 @@ function toggleSetValue(current: Set<string>, value: string, checked: boolean): 
   if (checked) next.add(value);
   else next.delete(value);
   return next;
+}
+
+function updatePhotoSelection(
+  current: Set<string>,
+  orderedIds: string[],
+  photoId: string,
+  checked: boolean,
+  shiftKey: boolean,
+  anchorId: string | null,
+) {
+  if (!shiftKey || !anchorId) {
+    return {
+      next: toggleSetValue(current, photoId, checked),
+      anchor: photoId,
+    };
+  }
+
+  const anchorIndex = orderedIds.indexOf(anchorId);
+  const targetIndex = orderedIds.indexOf(photoId);
+  if (anchorIndex < 0 || targetIndex < 0) {
+    return {
+      next: toggleSetValue(current, photoId, checked),
+      anchor: photoId,
+    };
+  }
+
+  const [start, end] = anchorIndex <= targetIndex ? [anchorIndex, targetIndex] : [targetIndex, anchorIndex];
+  const next = new Set(current);
+  for (let index = start; index <= end; index += 1) {
+    const id = orderedIds[index];
+    if (!id) continue;
+    if (checked) next.add(id);
+    else next.delete(id);
+  }
+  return {
+    next,
+    anchor: anchorId,
+  };
 }
 
 function AccountPhotoImage({

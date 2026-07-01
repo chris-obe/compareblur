@@ -32,6 +32,31 @@ export const onRequestPost: PagesFunction<Env> = async ({ env, params, request }
   }
 };
 
+export const onRequestDelete: PagesFunction<Env> = async ({ env, params, request }) => {
+  try {
+    const identity = await requireAuth0User(request, env);
+    const id = String(params.id);
+    const row = await env.GALLERY_DB.prepare('SELECT * FROM gallery_photos WHERE id = ? AND submitted_by = ?')
+      .bind(id, identity.sub)
+      .first<GalleryRow>();
+    if (!row) return json({ error: 'photo not found' }, { status: 404 });
+
+    const now = new Date().toISOString();
+    await env.GALLERY_DB.prepare(
+      `UPDATE gallery_photos
+       SET status = 'draft',
+           updated_at = ?,
+           published_at = NULL
+       WHERE id = ? AND submitted_by = ?`,
+    )
+      .bind(now, id, identity.sub)
+      .run();
+    return json({ ok: true, status: 'draft' });
+  } catch (error) {
+    return adminAuthError(error);
+  }
+};
+
 function requiredFields(row: GalleryRow): string[] {
   const missing: string[] = [];
   if (!row.title?.trim()) missing.push('title');

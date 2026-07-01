@@ -3,11 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import { categoryForFormat, type CategoryId } from '../../lib/categories';
 import { GALLERY_SEED } from '../../data/gallery.seed';
 import type { GalleryItem, ViewEntry } from '../../lib/types';
-import { getGalleryAlbum, listGalleryPhotos, type GalleryAlbum } from '../../lib/galleryApi';
+import { ApiError, getGalleryAlbum, listGalleryPhotos, type GalleryAlbum } from '../../lib/galleryApi';
 import { resolveGalleryFormat } from '../../lib/galleryFormat';
 import { suggestGalleryMetadata } from '../../lib/galleryMetadata';
 import { useCatalog } from '../../store/CatalogProvider';
 import { useReactions } from '../../store/ReactionsProvider';
+import { Button } from '../ui/Button';
 import { FilterBar } from './FilterBar';
 import { UploadBox } from './UploadBox';
 import { GalleryGrid } from './GalleryGrid';
@@ -58,6 +59,10 @@ export function GalleryPage({ albumSlug, initialPhotoId, closePath }: GalleryPag
   const [busy, setBusy] = useState(false);
   const [items, setItems] = useState<GalleryItem[]>(GALLERY_SEED);
   const [album, setAlbum] = useState<GalleryAlbum | null>(null);
+  const [albumPassword, setAlbumPassword] = useState('');
+  const [albumPasswordAttempt, setAlbumPasswordAttempt] = useState<{ value: string; nonce: number } | null>(null);
+  const [albumPasswordRequired, setAlbumPasswordRequired] = useState(false);
+  const [albumPasswordMessage, setAlbumPasswordMessage] = useState('');
   const objectUrl = useRef<string | null>(null);
   const openedInitialId = useRef<string | null>(null);
 
@@ -80,7 +85,9 @@ export function GalleryPage({ albumSlug, initialPhotoId, closePath }: GalleryPag
       setItems([]);
     }
     const load = albumSlug
-      ? getGalleryAlbum(albumSlug).then((data) => {
+      ? getGalleryAlbum(albumSlug, { password: albumPasswordAttempt?.value ?? undefined }).then((data) => {
+          setAlbumPasswordRequired(false);
+          setAlbumPasswordMessage('');
           setAlbum(data.album);
           return data.photos;
         })
@@ -103,8 +110,19 @@ export function GalleryPage({ albumSlug, initialPhotoId, closePath }: GalleryPag
           registerCounts(GALLERY_SEED);
         }
       })
-      .catch(() => {
+      .catch((error) => {
         if (cancelled) return;
+        if (albumSlug && error instanceof ApiError) {
+        const body = typeof error.body === 'object' && error.body != null ? error.body as { requiresPassword?: unknown } : null;
+        if (body?.requiresPassword) {
+          setAlbumPasswordRequired(true);
+          setAlbumPasswordMessage(albumPasswordAttempt?.value ? error.message : 'Album password required');
+            setAlbum(null);
+            setItems([]);
+            registerCounts([]);
+            return;
+          }
+        }
         if (albumSlug) {
           setAlbum(null);
           setItems([]);
@@ -117,7 +135,14 @@ export function GalleryPage({ albumSlug, initialPhotoId, closePath }: GalleryPag
     return () => {
       cancelled = true;
     };
-  }, [albumSlug, registerCounts]);
+  }, [albumPasswordAttempt, albumSlug, registerCounts]);
+
+  useEffect(() => {
+    setAlbumPassword('');
+    setAlbumPasswordAttempt(null);
+    setAlbumPasswordRequired(false);
+    setAlbumPasswordMessage('');
+  }, [albumSlug]);
 
   useEffect(() => {
     openedInitialId.current = null;
@@ -218,36 +243,74 @@ export function GalleryPage({ albumSlug, initialPhotoId, closePath }: GalleryPag
     <div className="flex flex-col">
       {album && (
         <div className="border-b border-line px-6 py-5">
-          <div className="label mb-2">Album</div>
+          <div className="label mb-2">{album.hasPassword ? 'Protected album' : 'Album'}</div>
           <h2 className="text-2xl font-bold tracking-tight">{album.title}</h2>
           {album.description && <p className="mt-2 max-w-2xl text-sm text-muted">{album.description}</p>}
+          {album.ownerName && <p className="mt-3 text-xs uppercase tracking-[0.16em] text-muted">Shared by {album.ownerName}</p>}
         </div>
       )}
-      <FilterBar
-        formats={formats}
-        toggleFormat={toggleFormat}
-        tags={tags}
-        allTags={allTags}
-        addTag={addTag}
-        removeTag={removeTag}
-        resultCount={filtered.length}
-      />
-      <UploadBox onFile={onFile} busy={busy} />
-      <GalleryGrid
-        items={filtered}
-        onSelect={onSelectCard}
-        activeId={activeId}
-        registerAnchor={registerAnchor}
-      />
+      {albumSlug && albumPasswordRequired && !album && (
+        <section className="border-b border-line px-6 py-8">
+          <div className="max-w-md space-y-4">
+            <div>
+              <div className="label mb-2">Protected album</div>
+              <h2 className="text-2xl font-bold tracking-tight">Enter album password</h2>
+              <p className="mt-2 text-sm text-muted">
+                This shared album is public, but it requires a password before the photos can load.
+              </p>
+            </div>
+            <label className="block">
+              <span className="label mb-2 block">Password</span>
+              <input
+                type="password"
+                value={albumPassword}
+                onChange={(event) => {
+                  setAlbumPassword(event.target.value);
+                  setAlbumPasswordMessage('');
+                }}
+                className="h-10 w-full border border-line bg-transparent px-3 text-sm outline-none focus:border-line-strong"
+              />
+            </label>
+            {albumPasswordMessage && <div className="text-xs text-muted">{albumPasswordMessage}</div>}
+            <Button
+              variant="solid"
+              onClick={() => setAlbumPasswordAttempt({ value: albumPassword.trim(), nonce: Date.now() })}
+              disabled={!albumPassword.trim()}
+            >
+              Unlock album
+            </Button>
+          </div>
+        </section>
+      )}
+      {albumSlug && albumPasswordRequired && !album ? null : (
+        <>
+          <FilterBar
+            formats={formats}
+            toggleFormat={toggleFormat}
+            tags={tags}
+            allTags={allTags}
+            addTag={addTag}
+            removeTag={removeTag}
+            resultCount={filtered.length}
+          />
+          <UploadBox onFile={onFile} busy={busy} />
+          <GalleryGrid
+            items={filtered}
+            onSelect={onSelectCard}
+            activeId={activeId}
+            registerAnchor={registerAnchor}
+          />
 
-      {view && (
-        <Lightbox
-          list={view.list}
-          index={view.index}
-          onIndex={(i) => setView((v) => (v ? { ...v, index: i } : v))}
-          onClose={closeView}
-          getAnchorRect={getAnchorRect}
-        />
+          {view && (
+            <Lightbox
+              list={view.list}
+              index={view.index}
+              onIndex={(i) => setView((v) => (v ? { ...v, index: i } : v))}
+              onClose={closeView}
+              getAnchorRect={getAnchorRect}
+            />
+          )}
+        </>
       )}
     </div>
   );

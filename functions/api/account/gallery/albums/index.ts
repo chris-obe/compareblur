@@ -2,8 +2,10 @@ import { adminAuthError, requireAuth0User } from '../../../../_lib/admin';
 import {
   albumFromRow,
   cleanAlbumSlug,
+  hashAlbumPassword,
   normalizeAlbumStatus,
   normalizePhotoInputs,
+  ownerNameForIdentity,
   ownedAlbumWithPhotos,
   replaceAlbumPhotos,
   type GalleryAlbumRow,
@@ -42,10 +44,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ env, request }) => {
     const now = new Date().toISOString();
     const status = normalizeAlbumStatus(body.status);
     const publishedAt = status === 'published' ? now : null;
+    const password = await hashAlbumPassword(stringValue(body.albumPassword, ''));
+    const ownerName = ownerNameForIdentity(identity);
     await env.GALLERY_DB.prepare(
       `INSERT INTO gallery_albums (
-        slug, title, description, status, owner_sub, cover_photo_id, created_at, updated_at, published_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        slug, title, description, status, owner_sub, owner_name, cover_photo_id,
+        password_hash, password_salt, created_at, updated_at, published_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
       .bind(
         slug,
@@ -53,7 +58,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ env, request }) => {
         stringValue(body.description, ''),
         status,
         identity.sub,
+        ownerName,
         nullableString(body.coverPhotoId),
+        password?.hash ?? null,
+        password?.salt ?? null,
         now,
         now,
         publishedAt,
@@ -70,7 +78,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ env, request }) => {
       description: stringValue(body.description, ''),
       status,
       owner_sub: identity.sub,
+      owner_name: ownerName,
       cover_photo_id: nullableString(body.coverPhotoId),
+      password_hash: password?.hash ?? null,
+      password_salt: password?.salt ?? null,
       created_at: now,
       updated_at: now,
       published_at: publishedAt,
@@ -85,6 +96,7 @@ interface AlbumBody {
   title?: unknown;
   description?: unknown;
   status?: unknown;
+  albumPassword?: unknown;
   coverPhotoId?: unknown;
   photoIds?: unknown;
   photos?: unknown;

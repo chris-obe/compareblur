@@ -7,6 +7,7 @@ binding = "GALLERY_DB"
 database_name = "compareblur-gallery"
 database_id = "5d671e52-b0ff-488e-aab5-9ce88c5cf1fa"
 preview_database_id = "GALLERY_DB"
+migrations_dir = "migrations/gallery"
 
 [[r2_buckets]]
 binding = "GALLERY_BUCKET"

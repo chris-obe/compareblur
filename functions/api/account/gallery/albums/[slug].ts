@@ -1,8 +1,10 @@
 import { adminAuthError, requireAuth0User } from '../../../../_lib/admin';
 import {
   cleanAlbumSlug,
+  hashAlbumPassword,
   normalizeAlbumStatus,
   normalizePhotoInputs,
+  ownerNameForIdentity,
   ownedAlbumWithPhotos,
   replaceAlbumPhotos,
   type GalleryAlbumRow,
@@ -34,10 +36,14 @@ export const onRequestPatch: PagesFunction<Env> = async ({ env, params, request 
     const status = body.status == null ? current.status : normalizeAlbumStatus(body.status, current.status);
     const now = new Date().toISOString();
     const publishedAt = status === 'published' ? current.published_at ?? now : null;
+    const nextPassword = body.albumPassword === undefined
+      ? { hash: current.password_hash, salt: current.password_salt }
+      : await hashAlbumPassword(stringValue(body.albumPassword, ''));
+    const clearedPassword = body.albumPassword !== undefined && !stringValue(body.albumPassword, '');
     await env.GALLERY_DB.prepare(
       `UPDATE gallery_albums
-       SET slug = ?, title = ?, description = ?, status = ?, cover_photo_id = ?,
-           updated_at = ?, published_at = ?
+       SET slug = ?, title = ?, description = ?, status = ?, owner_name = ?, cover_photo_id = ?,
+           password_hash = ?, password_salt = ?, updated_at = ?, published_at = ?
        WHERE slug = ? AND owner_sub = ?`,
     )
       .bind(
@@ -45,7 +51,10 @@ export const onRequestPatch: PagesFunction<Env> = async ({ env, params, request 
         stringValue(body.title, current.title),
         stringValue(body.description, current.description),
         status,
+        ownerNameForIdentity(identity),
         body.coverPhotoId === undefined ? current.cover_photo_id : nullableString(body.coverPhotoId),
+        clearedPassword ? null : nextPassword?.hash ?? null,
+        clearedPassword ? null : nextPassword?.salt ?? null,
         now,
         publishedAt,
         slug,
@@ -89,6 +98,7 @@ interface AlbumBody {
   title?: unknown;
   description?: unknown;
   status?: unknown;
+  albumPassword?: unknown;
   coverPhotoId?: unknown;
   photoIds?: unknown;
   photos?: unknown;

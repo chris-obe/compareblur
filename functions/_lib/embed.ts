@@ -48,7 +48,10 @@ export interface GalleryAlbumRow {
   description: string;
   status: GalleryAlbumStatus;
   owner_sub: string | null;
+  owner_name: string | null;
   cover_photo_id: string | null;
+  password_hash: string | null;
+  password_salt: string | null;
   created_at: string;
   updated_at: string;
   published_at: string | null;
@@ -116,6 +119,8 @@ export function albumFromRow(row: GalleryAlbumRow, photos: unknown[] = []) {
     description: row.description,
     status: row.status,
     ownerSub: row.owner_sub ?? undefined,
+    ownerName: row.owner_name ?? undefined,
+    hasPassword: !!row.password_hash,
     coverPhotoId: row.cover_photo_id ?? undefined,
     photos,
     createdAt: row.created_at,
@@ -173,11 +178,12 @@ export function normalizeEmbedTemplate(input: unknown): EmbedTemplate {
   };
 }
 
-export async function publicAlbumWithPhotos(env: GalleryEnv, slug: string) {
+export async function publicAlbumWithPhotos(env: GalleryEnv, slug: string, password?: string | null) {
   const row = await env.GALLERY_DB.prepare('SELECT * FROM gallery_albums WHERE slug = ? AND status = ?')
     .bind(slug, 'published')
     .first<GalleryAlbumRow>();
   if (!row) return null;
+  if (row.password_hash && !(await verifyAlbumPassword(row, password))) return null;
   const photos = await albumPhotos(env, slug, false);
   return albumFromRow(row, photos);
 }
@@ -271,6 +277,30 @@ export function normalizePhotoInputs(value: unknown): GalleryAlbumPhotoInput[] {
     .filter((item): item is GalleryAlbumPhotoInput => !!item);
 }
 
+export function ownerNameForIdentity(identity: { name?: string; email?: string; sub: string }) {
+  const explicit = cleanPublicOwnerName(identity.name);
+  if (explicit) return explicit;
+  const emailLocal = typeof identity.email === 'string' ? identity.email.split('@')[0]?.trim() : '';
+  if (emailLocal) return cleanPublicOwnerName(emailLocal) || 'blur account';
+  const subFallback = identity.sub.split('|').at(-1)?.trim();
+  return cleanPublicOwnerName(subFallback) || 'blur account';
+}
+
+export async function hashAlbumPassword(password: string) {
+  const trimmed = password.trim();
+  if (!trimmed) return null;
+  const salt = crypto.randomUUID();
+  const hash = await sha256(`${salt}:${trimmed}`);
+  return { salt, hash };
+}
+
+export async function verifyAlbumPassword(row: Pick<GalleryAlbumRow, 'password_hash' | 'password_salt'>, password?: string | null) {
+  if (!row.password_hash) return true;
+  const trimmed = typeof password === 'string' ? password.trim() : '';
+  if (!trimmed || !row.password_salt) return false;
+  return (await sha256(`${row.password_salt}:${trimmed}`)) === row.password_hash;
+}
+
 async function albumPhotos(env: GalleryEnv, slug: string, admin: boolean) {
   const rows = await env.GALLERY_DB.prepare(
     `SELECT gallery_photos.*
@@ -305,4 +335,15 @@ function numberInRange(value: unknown, min: number, max: number, fallback: numbe
 
 function stringOrNull(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function cleanPublicOwnerName(value?: string | null) {
+  if (typeof value !== 'string') return '';
+  return value.replace(/\s+/g, ' ').trim().slice(0, 80);
+}
+
+async function sha256(value: string) {
+  const data = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest('SHA-256', data);
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
 }

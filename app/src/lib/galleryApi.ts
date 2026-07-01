@@ -61,6 +61,8 @@ export interface GalleryAlbum {
   description: string;
   status: GalleryAlbumStatus;
   ownerSub?: string;
+  ownerName?: string;
+  hasPassword?: boolean;
   coverPhotoId?: string | null;
   photos: GalleryItem[];
   createdAt: string;
@@ -158,10 +160,26 @@ export interface AdminGalleryReactionStats {
   }>;
 }
 
+export class ApiError extends Error {
+  status: number;
+  body: unknown;
+
+  constructor(message: string, status: number, body: unknown) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.body = body;
+  }
+}
+
 async function readJson<T>(res: Response): Promise<T> {
   if (!res.ok) {
     const body = await res.json().catch(() => null);
-    throw new Error(typeof body?.error === 'string' ? body.error : `Gallery API failed with ${res.status}`);
+    throw new ApiError(
+      typeof body?.error === 'string' ? body.error : `Gallery API failed with ${res.status}`,
+      res.status,
+      body,
+    );
   }
   return res.json() as Promise<T>;
 }
@@ -171,9 +189,14 @@ export async function listGalleryPhotos(): Promise<GalleryItem[]> {
   return (await readJson<GalleryListResponse>(res)).photos;
 }
 
-export async function getGalleryAlbum(slug: string): Promise<GalleryAlbumResponse> {
+export async function getGalleryAlbum(
+  slug: string,
+  options: { password?: string | null } = {},
+): Promise<GalleryAlbumResponse> {
+  const headers = new Headers({ accept: 'application/json' });
+  if (options.password?.trim()) headers.set('x-gallery-album-password', options.password.trim());
   const res = await fetch(`/api/gallery/albums/${encodeURIComponent(slug)}`, {
-    headers: { accept: 'application/json' },
+    headers,
   });
   return readJson<GalleryAlbumResponse>(res);
 }
@@ -270,7 +293,7 @@ export async function listAdminGalleryAlbums(accessToken?: string): Promise<Gall
 }
 
 export async function createAdminGalleryAlbum(
-  album: Partial<GalleryAlbum> & { photoIds?: string[] },
+  album: Partial<GalleryAlbum> & { photoIds?: string[]; albumPassword?: string | null },
   accessToken?: string,
 ): Promise<GalleryAlbum> {
   const res = await fetch('/api/admin/gallery/albums', {
@@ -283,7 +306,7 @@ export async function createAdminGalleryAlbum(
 
 export async function updateAdminGalleryAlbum(
   slug: string,
-  updates: Partial<GalleryAlbum> & { photoIds?: string[] },
+  updates: Partial<GalleryAlbum> & { photoIds?: string[]; albumPassword?: string | null },
   accessToken?: string,
 ): Promise<GalleryAlbum> {
   const res = await fetch(`/api/admin/gallery/albums/${encodeURIComponent(slug)}`, {
@@ -421,13 +444,21 @@ export async function publishAccountGalleryPhoto(id: string, accessToken: string
   await readJson<{ ok: true }>(res);
 }
 
+export async function unpublishAccountGalleryPhoto(id: string, accessToken: string): Promise<void> {
+  const res = await fetch(`/api/account/gallery/photos/${encodeURIComponent(id)}/publish`, {
+    method: 'DELETE',
+    headers: authHeaders(accessToken),
+  });
+  await readJson<{ ok: true }>(res);
+}
+
 export async function listAccountGalleryAlbums(accessToken: string): Promise<GalleryAlbum[]> {
   const res = await fetch('/api/account/gallery/albums', { headers: authHeaders(accessToken) });
   return (await readJson<GalleryAlbumsResponse>(res)).albums;
 }
 
 export async function createAccountGalleryAlbum(
-  album: Partial<GalleryAlbum> & { photoIds?: string[] },
+  album: Partial<GalleryAlbum> & { photoIds?: string[]; albumPassword?: string | null },
   accessToken: string,
 ): Promise<GalleryAlbum> {
   const res = await fetch('/api/account/gallery/albums', {
@@ -440,7 +471,7 @@ export async function createAccountGalleryAlbum(
 
 export async function updateAccountGalleryAlbum(
   slug: string,
-  updates: Partial<GalleryAlbum> & { photoIds?: string[] },
+  updates: Partial<GalleryAlbum> & { photoIds?: string[]; albumPassword?: string | null },
   accessToken: string,
 ): Promise<GalleryAlbum> {
   const res = await fetch(`/api/account/gallery/albums/${encodeURIComponent(slug)}`, {
