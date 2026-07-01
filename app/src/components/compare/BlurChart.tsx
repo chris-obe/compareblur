@@ -6,11 +6,9 @@ import { AxisBottom, AxisLeft } from '@visx/axis';
 import { localPoint } from '@visx/event';
 import { ParentSize } from '@visx/responsive';
 import { Ruler } from 'lucide-react';
+import { compareLineColor, compareLineStyle } from '../../lib/compareStyles';
 import { blurFraction, fieldOfView, focusDistanceForFraming } from '../../lib/engine';
 import { systemLabel, type CompareSystem } from '../../store/CompareProvider';
-
-// Monochrome differentiation: solid + three dash patterns. Caps at 4 systems.
-export const DASHES = ['0', '5,4', '1.5,4', '9,4,1.5,4'];
 
 const MARGIN = { top: 14, right: 18, bottom: 34, left: 46 };
 const MIN_BG_BEHIND_M = 0.1;
@@ -23,6 +21,8 @@ interface Pt {
 interface Series {
   id: string;
   label: string;
+  stroke: string;
+  dash: string;
   focusM: number;
   fovH: number;
   points: Pt[];
@@ -103,15 +103,15 @@ function Inner({
             tickLabelProps={() => ({ fill: 'var(--muted)', fontSize: 10, dy: 2, textAnchor: 'middle' })}
           />
 
-          {series.map((s, i) => (
+          {series.map((s) => (
             <LinePath
               key={s.id}
               data={s.points}
               x={(p) => xScale(p.behindM)}
               y={(p) => yScale(p.blurPct)}
-              stroke="var(--fg)"
+              stroke={s.stroke}
               strokeWidth={1.5}
-              strokeDasharray={DASHES[i % DASHES.length]}
+              strokeDasharray={s.dash}
               curve={undefined}
             />
           ))}
@@ -136,7 +136,7 @@ function Inner({
                     cy={yScale(v)}
                     r={3}
                     fill="var(--bg)"
-                    stroke="var(--fg)"
+                    stroke={s.stroke}
                     strokeWidth={1.5}
                     pointerEvents="none"
                   />
@@ -163,12 +163,12 @@ function Inner({
           <>
             <div className="label">background +{formatDistance(cursor)} behind subject</div>
             {[...series]
-              .map((s, i) => ({ s, i, v: blurAt(s.points, cursor) }))
+              .map((s) => ({ s, v: blurAt(s.points, cursor) }))
               .filter((r) => r.v != null)
               .sort((a, b) => (b.v as number) - (a.v as number))
-              .map(({ s, i, v }) => (
+              .map(({ s, v }) => (
                 <div key={s.id} className="flex items-center gap-2 text-xs">
-                  <DashSwatch index={i} />
+                  <DashSwatch color={s.stroke} dash={s.dash} />
                   <span className="tabular-nums font-bold">{(v as number).toFixed(1)}%</span>
                   <span className="min-w-0 truncate text-muted">
                     {s.label}
@@ -184,9 +184,9 @@ function Inner({
 
       {showContext && cursor == null && (
         <div className="pointer-events-none absolute bottom-8 left-12 right-4 flex flex-wrap gap-2">
-          {series.map((s, i) => (
+          {series.map((s) => (
             <div key={s.id} className="flex max-w-full items-center gap-2 border border-line bg-bg/90 px-2 py-1 text-xs">
-              <DashSwatch index={i} />
+              <DashSwatch color={s.stroke} dash={s.dash} />
               <span className="truncate font-bold">{formatDistance(s.focusM)}</span>
               <span className="label shrink-0">{Math.round(s.fovH)}° FOV</span>
             </div>
@@ -197,7 +197,7 @@ function Inner({
   );
 }
 
-export function DashSwatch({ index }: { index: number }) {
+export function DashSwatch({ color = 'var(--fg)', dash = '0' }: { color?: string; dash?: string }) {
   return (
     <svg width={22} height={8} className="shrink-0">
       <line
@@ -205,9 +205,9 @@ export function DashSwatch({ index }: { index: number }) {
         y1={4}
         x2={22}
         y2={4}
-        stroke="var(--fg)"
+        stroke={color}
         strokeWidth={1.5}
-        strokeDasharray={DASHES[index % DASHES.length]}
+        strokeDasharray={dash}
       />
     </svg>
   );
@@ -249,11 +249,15 @@ export function BlurChart({
   const [showContext, setShowContext] = useState(true);
   const series: Series[] = useMemo(
     () =>
-      systems.map((s) => {
+      systems.map((s, index) => {
         const focusM = seriesFocusDistance(s, subjectWidthM, focusOverrideM);
+        const color = compareLineColor(s.lineColor, index);
+        const style = compareLineStyle(s.lineStyle, index);
         return {
           id: s.id,
           label: systemLabel(s),
+          stroke: color.stroke,
+          dash: style.dash,
           focusM,
           fovH: fieldOfView(s.focal, s.format).h,
           points: blurBehindSubjectCurve(s, focusM),

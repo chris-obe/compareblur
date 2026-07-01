@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useState, type ReactNode } from 'react';
+import { COMPARE_LINE_COLORS, COMPARE_LINE_STYLES } from '../lib/compareStyles';
 import type { Format } from '../lib/engine';
 import { DEFAULT_SUBJECT_DISTANCE_PRESET_ID, subjectPresetById } from '../lib/subjectDistance';
 import type { LookSource } from '../lib/lookMatching';
@@ -7,6 +8,7 @@ import type { LookSource } from '../lib/lookMatching';
 // format, source); focal/aperture are editable, so the display label is derived.
 export interface CompareSystem {
   id: string;
+  identifier?: string;
   context: string;
   format: Format;
   focal: number;
@@ -14,11 +16,13 @@ export interface CompareSystem {
   subjectPreset?: string;
   subjectWidthM?: number;
   source?: LookSource;
+  lineColor?: string;
+  lineStyle?: string;
 }
 
 export function systemLabel(s: CompareSystem): string {
   const ap = Math.round(s.aperture * 10) / 10;
-  return `${Math.round(s.focal)}mm ƒ/${ap} · ${s.context}`;
+  return `${s.identifier ?? s.id} · ${Math.round(s.focal)}mm ƒ/${ap}`;
 }
 
 interface CompareContextValue {
@@ -56,7 +60,18 @@ export function CompareProvider({ children }: { children: ReactNode }) {
     const presetWidth = subjectPresetById(sys.subjectPreset)?.widthM;
     if (sys.subjectWidthM) setSubjectWidthM(sys.subjectWidthM);
     else if (presetWidth) setSubjectWidthM(presetWidth);
-    setSystems((prev) => (prev.length >= 4 ? prev : [...prev, sys]));
+    setSystems((prev) => {
+      const index = prev.length;
+      return [
+        ...prev,
+        {
+          ...sys,
+          identifier: sys.identifier ?? sys.id,
+          lineColor: sys.lineColor ?? COMPARE_LINE_COLORS[index % COMPARE_LINE_COLORS.length].id,
+          lineStyle: sys.lineStyle ?? COMPARE_LINE_STYLES[index % COMPARE_LINE_STYLES.length].id,
+        },
+      ];
+    });
   }, [setSubjectWidthM]);
   const remove = useCallback((id: string) => {
     setSystems((prev) => prev.filter((s) => s.id !== id));

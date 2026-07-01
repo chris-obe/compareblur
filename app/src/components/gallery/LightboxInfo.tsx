@@ -36,6 +36,7 @@ export function LightboxInfo({ entry }: { entry: ViewEntry }) {
             onClick={() => {
               addToCompare({
                 id: nextSystemId(),
+                identifier: entry.title,
                 context: entry.title,
                 format,
                 focal,

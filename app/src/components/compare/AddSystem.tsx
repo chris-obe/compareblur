@@ -24,8 +24,7 @@ const fieldCls =
   'border border-line bg-transparent px-2 py-1.5 text-xs outline-none focus:border-line-strong';
 
 export function AddSystem() {
-  const { add, systems } = useCompare();
-  const full = systems.length >= 4;
+  const { add } = useCompare();
 
   return (
     <div className="border border-line">
@@ -33,11 +32,7 @@ export function AddSystem() {
         <div className="text-xs font-bold uppercase tracking-wide">Select Camera</div>
       </div>
       <div className="p-4">
-        {full ? (
-          <div className="text-xs text-muted">Comparing 4 systems (the max). Remove one to add another.</div>
-        ) : (
-          <AddSystemForm onAdd={add} />
-        )}
+        <AddSystemForm onAdd={add} />
       </div>
     </div>
   );

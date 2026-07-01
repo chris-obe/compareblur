@@ -121,6 +121,7 @@ export function SuggestionsPage() {
   const addResultToCompare = (result: LookMatchResult) => {
     compare.add({
       id: nextSystemId(),
+      identifier: result.candidate.lensName,
       context: `${result.candidate.bodyName} · ${result.candidate.lensName}`,
       format: result.candidate.format,
       focal: result.recommendedFocal,
