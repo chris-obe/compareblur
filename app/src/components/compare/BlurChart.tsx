@@ -9,10 +9,12 @@ import { Ruler } from 'lucide-react';
 import { compareLineColor, compareLineStyle } from '../../lib/compareStyles';
 import { blurFraction, fieldOfView, focusDistanceForFraming } from '../../lib/engine';
 import { systemLabel, type CompareSystem } from '../../store/CompareProvider';
+import { Dropdown } from '../ui/Dropdown';
 
 const MARGIN = { top: 14, right: 18, bottom: 34, left: 46 };
 const MIN_BG_BEHIND_M = 0.1;
 const MAX_BG_BEHIND_M = 200;
+type ReadoutMode = 'fixed' | 'tracked';
 
 interface Pt {
   behindM: number;
@@ -47,15 +49,20 @@ function Inner({
   height,
   series,
   showContext,
+  readoutMode,
+  trackedSeriesId,
 }: {
   width: number;
   height: number;
   series: Series[];
   showContext: boolean;
+  readoutMode: ReadoutMode;
+  trackedSeriesId: string;
 }) {
   const [cursor, setCursor] = useState<number | null>(null);
   const innerW = Math.max(0, width - MARGIN.left - MARGIN.right);
   const innerH = Math.max(0, height - MARGIN.top - MARGIN.bottom);
+  const trackedSeries = series.find((s) => s.id === trackedSeriesId) ?? series[0];
 
   const yMax = useMemo(() => {
     const m = Math.max(0.5, ...series.flatMap((s) => s.points.map((p) => p.blurPct)));
@@ -129,15 +136,16 @@ function Inner({
               {series.map((s) => {
                 const v = blurAt(s.points, cursor);
                 if (v == null) return null;
+                const tracked = readoutMode === 'tracked' && s.id === trackedSeries?.id;
                 return (
                   <circle
                     key={s.id}
                     cx={xScale(cursor)}
                     cy={yScale(v)}
-                    r={3}
+                    r={tracked ? 5 : 3}
                     fill="var(--bg)"
                     stroke={s.stroke}
-                    strokeWidth={1.5}
+                    strokeWidth={tracked ? 2 : 1.5}
                     pointerEvents="none"
                   />
                 );
@@ -158,29 +166,49 @@ function Inner({
       </svg>
 
       {/* ranked readout */}
-      <div className="pointer-events-none absolute left-12 top-2 max-w-[calc(100%-4rem)] space-y-1">
-        {cursor != null ? (
-          <>
-            <div className="label">background +{formatDistance(cursor)} behind subject</div>
-            {[...series]
-              .map((s) => ({ s, v: blurAt(s.points, cursor) }))
-              .filter((r) => r.v != null)
-              .sort((a, b) => (b.v as number) - (a.v as number))
-              .map(({ s, v }) => (
-                <div key={s.id} className="flex items-center gap-2 text-xs">
-                  <DashSwatch color={s.stroke} dash={s.dash} />
-                  <span className="tabular-nums font-bold">{(v as number).toFixed(1)}%</span>
-                  <span className="min-w-0 truncate text-muted">
-                    {s.label}
-                    {showContext ? ` · stand ${formatDistance(s.focusM)} · ${Math.round(s.fovH)}° FOV` : ''}
-                  </span>
-                </div>
-              ))}
-          </>
-        ) : (
-          <div className="label">hover to read blur at a background distance</div>
-        )}
-      </div>
+      {readoutMode === 'fixed' && (
+        <div className="pointer-events-none absolute left-12 top-2 max-w-[calc(100%-4rem)] space-y-1">
+          {cursor != null ? (
+            <>
+              <div className="label">background +{formatDistance(cursor)} behind subject</div>
+              {[...series]
+                .map((s) => ({ s, v: blurAt(s.points, cursor) }))
+                .filter((r) => r.v != null)
+                .sort((a, b) => (b.v as number) - (a.v as number))
+                .map(({ s, v }) => (
+                  <div key={s.id} className="flex items-center gap-2 text-xs">
+                    <DashSwatch color={s.stroke} dash={s.dash} />
+                    <span className="tabular-nums font-bold">{(v as number).toFixed(1)}%</span>
+                    <span className="min-w-0 truncate text-muted">
+                      {s.label}
+                      {showContext ? ` · stand ${formatDistance(s.focusM)} · ${Math.round(s.fovH)}° FOV` : ''}
+                    </span>
+                  </div>
+                ))}
+            </>
+          ) : (
+            <div className="label">hover to read blur at a background distance</div>
+          )}
+        </div>
+      )}
+
+      {readoutMode === 'tracked' && cursor != null && trackedSeries && (
+        <TrackedReadout
+          series={trackedSeries}
+          blurPct={blurAt(trackedSeries.points, cursor)}
+          behindM={cursor}
+          point={{
+            x: MARGIN.left + xScale(cursor),
+            y: MARGIN.top + yScale(blurAt(trackedSeries.points, cursor) ?? 0),
+          }}
+          bounds={{ width, height }}
+          showContext={showContext}
+        />
+      )}
+
+      {readoutMode === 'tracked' && cursor == null && (
+        <div className="pointer-events-none absolute left-12 top-2 label">hover to move the selected line readout</div>
+      )}
 
       {showContext && cursor == null && (
         <div className="pointer-events-none absolute bottom-8 left-12 right-4 flex flex-wrap gap-2">
@@ -191,6 +219,49 @@ function Inner({
               <span className="label shrink-0">{Math.round(s.fovH)}° FOV</span>
             </div>
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TrackedReadout({
+  series,
+  blurPct,
+  behindM,
+  point,
+  bounds,
+  showContext,
+}: {
+  series: Series;
+  blurPct: number | null;
+  behindM: number;
+  point: { x: number; y: number };
+  bounds: { width: number; height: number };
+  showContext: boolean;
+}) {
+  if (blurPct == null) return null;
+  const box = { w: Math.min(286, Math.max(180, bounds.width - 16)), h: showContext ? 92 : 68 };
+  const gap = 12;
+  const nextToPoint = point.x + gap + box.w > bounds.width ? point.x - gap - box.w : point.x + gap;
+  const abovePoint = point.y - gap - box.h < 0 ? point.y + gap : point.y - gap - box.h;
+  const left = clamp(nextToPoint, 8, Math.max(8, bounds.width - box.w - 8));
+  const top = clamp(abovePoint, 8, Math.max(8, bounds.height - box.h - 8));
+
+  return (
+    <div
+      className="pointer-events-none absolute z-10 border border-line bg-bg/95 px-3 py-2 text-xs shadow-none"
+      style={{ left, top, width: box.w }}
+    >
+      <div className="label mb-1">background +{formatDistance(behindM)} behind subject</div>
+      <div className="flex items-center gap-2">
+        <DashSwatch color={series.stroke} dash={series.dash} />
+        <span className="text-base font-bold tabular-nums">{blurPct.toFixed(1)}%</span>
+        <span className="min-w-0 truncate text-muted">{series.label}</span>
+      </div>
+      {showContext && (
+        <div className="label mt-2 truncate">
+          stand {formatDistance(series.focusM)} · {Math.round(series.fovH)}° FOV
         </div>
       )}
     </div>
@@ -247,6 +318,8 @@ export function BlurChart({
   focusOverrideM: number | null;
 }) {
   const [showContext, setShowContext] = useState(true);
+  const [readoutMode, setReadoutMode] = useState<ReadoutMode>('fixed');
+  const [trackedSeriesId, setTrackedSeriesId] = useState('');
   const series: Series[] = useMemo(
     () =>
       systems.map((s, index) => {
@@ -265,6 +338,7 @@ export function BlurChart({
       }),
     [systems, subjectWidthM, focusOverrideM],
   );
+  const activeTrackedSeriesId = series.some((s) => s.id === trackedSeriesId) ? trackedSeriesId : series[0]?.id ?? '';
 
   return (
     <div className="flex h-full min-h-[360px] w-full flex-col border border-line">
@@ -273,19 +347,40 @@ export function BlurChart({
           <div className="text-xs font-bold uppercase tracking-wide">Background blur by framing</div>
           <div className="label mt-1">x = background distance behind subject · y = blur as % of frame width</div>
         </div>
-        <button
-          type="button"
-          onClick={() => setShowContext((current) => !current)}
-          aria-pressed={showContext}
-          title="Show standing distance and horizontal FOV"
-          className={[
-            'inline-flex items-center gap-2 border px-3 py-1.5 text-xs uppercase tracking-wide transition-colors',
-            showContext ? 'border-fg bg-fg text-bg' : 'border-line hover:border-line-strong',
-          ].join(' ')}
-        >
-          <Ruler size={14} strokeWidth={1.5} />
-          FOV / stand
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="inline-flex border border-line">
+            {(['fixed', 'tracked'] as const).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => setReadoutMode(mode)}
+                aria-pressed={readoutMode === mode}
+                className={[
+                  'px-3 py-1.5 text-xs uppercase tracking-wide transition-colors',
+                  readoutMode === mode ? 'bg-fg text-bg' : 'hover:bg-faint',
+                ].join(' ')}
+              >
+                {mode === 'fixed' ? 'Fixed' : 'Track'}
+              </button>
+            ))}
+          </div>
+          {readoutMode === 'tracked' && series.length > 0 && (
+            <SeriesDropdown series={series} value={activeTrackedSeriesId} onChange={setTrackedSeriesId} />
+          )}
+          <button
+            type="button"
+            onClick={() => setShowContext((current) => !current)}
+            aria-pressed={showContext}
+            title="Show standing distance and horizontal FOV"
+            className={[
+              'inline-flex items-center gap-2 border px-3 py-1.5 text-xs uppercase tracking-wide transition-colors',
+              showContext ? 'border-fg bg-fg text-bg' : 'border-line hover:border-line-strong',
+            ].join(' ')}
+          >
+            <Ruler size={14} strokeWidth={1.5} />
+            FOV / stand
+          </button>
+        </div>
       </div>
       {systems.length === 0 ? (
         <div className="flex min-h-0 flex-1 items-center justify-center text-xs text-muted">
@@ -293,10 +388,62 @@ export function BlurChart({
         </div>
       ) : (
         <div className="min-h-0 flex-1">
-          <ParentSize>{({ width, height }) => <Inner width={width} height={height} series={series} showContext={showContext} />}</ParentSize>
+          <ParentSize>
+            {({ width, height }) => (
+              <Inner
+                width={width}
+                height={height}
+                series={series}
+                showContext={showContext}
+                readoutMode={readoutMode}
+                trackedSeriesId={activeTrackedSeriesId}
+              />
+            )}
+          </ParentSize>
         </div>
       )}
     </div>
+  );
+}
+
+function SeriesDropdown({
+  series,
+  value,
+  onChange,
+}: {
+  series: Series[];
+  value: string;
+  onChange: (id: string) => void;
+}) {
+  const selected = series.find((s) => s.id === value) ?? series[0];
+  return (
+    <Dropdown
+      align="right"
+      className="w-64"
+      trigger={
+        <div className="inline-flex max-w-52 items-center gap-2 border border-line px-3 py-1.5 text-xs uppercase tracking-wide transition-colors hover:border-line-strong">
+          <DashSwatch color={selected.stroke} dash={selected.dash} />
+          <span className="min-w-0 truncate">{selected.label}</span>
+        </div>
+      }
+    >
+      <div className="max-h-64 overflow-y-auto py-1">
+        {series.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            onClick={() => onChange(item.id)}
+            className={[
+              'flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-faint',
+              item.id === selected.id ? 'bg-faint' : '',
+            ].join(' ')}
+          >
+            <DashSwatch color={item.stroke} dash={item.dash} />
+            <span className="min-w-0 flex-1 truncate">{item.label}</span>
+          </button>
+        ))}
+      </div>
+    </Dropdown>
   );
 }
 
@@ -304,4 +451,8 @@ function formatDistance(distanceM: number): string {
   if (distanceM < 1) return `${Math.round(distanceM * 100)}cm`;
   if (distanceM < 10) return `${distanceM.toFixed(1)}m`;
   return `${Math.round(distanceM)}m`;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
 }
