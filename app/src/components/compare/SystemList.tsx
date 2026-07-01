@@ -1,15 +1,13 @@
 import { Trash2 } from 'lucide-react';
 import { cropFactor } from '../../lib/engine';
 import { COMPARE_LINE_COLORS, COMPARE_LINE_STYLES, compareLineColor, compareLineStyle } from '../../lib/compareStyles';
-import { useCompare, type CompareSystem } from '../../store/CompareProvider';
+import { systemLabel, useCompare, type CompareSystem } from '../../store/CompareProvider';
 import { DashSwatch } from './BlurChart';
 import { NumberField } from '../ui/NumberField';
 import { Dropdown } from '../ui/Dropdown';
 
 const slotField =
   'h-8 w-16 border border-line bg-transparent px-1.5 text-xs outline-none focus:border-line-strong';
-const textField =
-  'h-8 min-w-0 border border-line bg-transparent px-2 text-xs font-bold outline-none focus:border-line-strong';
 
 // The systems currently plotted — lives in the Compare sidebar on desktop.
 export function SystemList() {
@@ -51,17 +49,16 @@ function SystemRow({
 }) {
   const color = compareLineColor(system.lineColor, index);
   const style = compareLineStyle(system.lineStyle, index);
+  const detail = systemDetail(system);
 
   return (
     <div className="border-b border-line px-3 py-2 last:border-b-0">
       <div className="grid grid-cols-[1.7rem_minmax(0,1fr)_auto] items-center gap-2">
         <DashSwatch color={color.stroke} dash={style.dash} />
-        <input
-          value={system.identifier ?? system.id}
-          onChange={(event) => onUpdate({ identifier: event.target.value })}
-          aria-label="Compare system identifier"
-          className={textField}
-        />
+        <div className="min-w-0">
+          <div className="truncate text-xs font-bold">{systemLabel(system)}</div>
+          <div className="label mt-0.5 truncate">{detail}</div>
+        </div>
         <button type="button" onClick={onRemove} aria-label="Remove" className="flex h-8 w-8 items-center justify-center text-muted hover:text-fg">
           <Trash2 size={15} strokeWidth={1.5} />
         </button>
@@ -69,8 +66,8 @@ function SystemRow({
 
       <div className="mt-2 flex flex-wrap items-end gap-2">
         <div className="min-w-0 flex-1">
-          <div className="truncate text-xs font-bold">{compactContext(system)}</div>
-          <div className="label mt-1 truncate">{system.format.name} · {cropFactor(system.format).toFixed(1)}x</div>
+          <div className="label">Format</div>
+          <div className="truncate text-xs">{system.format.name} · {cropFactor(system.format).toFixed(1)}x</div>
         </div>
         <label className="flex flex-col gap-1">
           <span className="label">Focal</span>
@@ -148,8 +145,10 @@ function StyleMenu({
   );
 }
 
-function compactContext(system: CompareSystem): string {
-  const [first, ...rest] = system.context.split(' · ');
-  if (rest.length === 0) return first;
-  return `${first} · ${rest[rest.length - 1]}`;
+function systemDetail(system: CompareSystem): string {
+  const parts = system.context.split(' · ').map((part) => part.trim()).filter(Boolean);
+  if (parts.length <= 1) return system.format.name;
+  const detailParts = parts.slice(1);
+  if (/^\d+(\.\d+)?x$/i.test(detailParts[detailParts.length - 1] ?? '')) detailParts.pop();
+  return detailParts.join(' · ') || system.format.name;
 }

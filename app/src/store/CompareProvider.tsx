@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useState, type ReactNode } from 'react';
 import { COMPARE_LINE_COLORS, COMPARE_LINE_STYLES } from '../lib/compareStyles';
-import type { Format } from '../lib/engine';
+import { cropFactor, type Format } from '../lib/engine';
 import { DEFAULT_SUBJECT_DISTANCE_PRESET_ID, subjectPresetById } from '../lib/subjectDistance';
 import type { LookSource } from '../lib/lookMatching';
 
@@ -20,9 +20,21 @@ export interface CompareSystem {
   lineStyle?: string;
 }
 
+function apertureLabel(aperture: number): string {
+  return Number.isInteger(aperture) ? String(aperture) : String(Math.round(aperture * 10) / 10);
+}
+
+export function systemSourceLabel(s: CompareSystem): string {
+  const [source] = s.context.split(' · ').map((part) => part.trim()).filter(Boolean);
+  return source || s.identifier || s.format.name;
+}
+
+export function systemOpticsLabel(s: CompareSystem): string {
+  return `${cropFactor(s.format).toFixed(1)}x · ${Math.round(s.focal)}mm ƒ/${apertureLabel(s.aperture)}`;
+}
+
 export function systemLabel(s: CompareSystem): string {
-  const ap = Math.round(s.aperture * 10) / 10;
-  return `${s.identifier ?? s.id} · ${Math.round(s.focal)}mm ƒ/${ap}`;
+  return `${systemSourceLabel(s)} · ${systemOpticsLabel(s)}`;
 }
 
 interface CompareContextValue {
@@ -66,7 +78,6 @@ export function CompareProvider({ children }: { children: ReactNode }) {
         ...prev,
         {
           ...sys,
-          identifier: sys.identifier ?? sys.id,
           lineColor: sys.lineColor ?? COMPARE_LINE_COLORS[index % COMPARE_LINE_COLORS.length].id,
           lineStyle: sys.lineStyle ?? COMPARE_LINE_STYLES[index % COMPARE_LINE_STYLES.length].id,
         },

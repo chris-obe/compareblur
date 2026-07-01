@@ -6,10 +6,11 @@ interface DropdownProps {
   children: ReactNode;
   align?: 'left' | 'right';
   className?: string;
+  closeOnClick?: boolean;
 }
 
 // Tight, fast dropdown. Closes on outside click / Escape.
-export function Dropdown({ trigger, children, align = 'right', className = '' }: DropdownProps) {
+export function Dropdown({ trigger, children, align = 'right', className = '', closeOnClick = true }: DropdownProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -45,7 +46,7 @@ export function Dropdown({ trigger, children, align = 'right', className = '' }:
               className,
             ].join(' ')}
             style={{ borderColor: 'var(--line)' }}
-            onClick={() => setOpen(false)}
+            onClick={closeOnClick ? () => setOpen(false) : undefined}
           >
             {children}
           </motion.div>
