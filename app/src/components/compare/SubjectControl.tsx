@@ -29,7 +29,7 @@ export function SubjectControl({ width, onChange, focusM, onFocusChange }: Props
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="label mr-1">Subject</span>
+        <span className="label mr-1">Subject size</span>
         {SUBJECT_DISTANCE_PRESETS.map((preset) => (
           <button
             key={preset.id}
@@ -65,7 +65,7 @@ export function SubjectControl({ width, onChange, focusM, onFocusChange }: Props
 
       {/* Manual focus distance — overrides framing for all systems while engaged */}
       <div className="flex items-center gap-3">
-        <span className="label mr-1 whitespace-nowrap">Focus</span>
+        <span className="label mr-1 whitespace-nowrap">Distance</span>
         <input
           type="range"
           min={0}
@@ -80,7 +80,7 @@ export function SubjectControl({ width, onChange, focusM, onFocusChange }: Props
           {manual ? (
             <span className="font-bold">{fmtDist(focusM)} fixed</span>
           ) : (
-            <span className="text-muted">auto · ~{fmtDist(autoRef)}</span>
+            <span className="text-muted">auto framing</span>
           )}
         </span>
         {manual && (

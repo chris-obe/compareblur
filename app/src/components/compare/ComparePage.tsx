@@ -3,7 +3,6 @@ import { BlurChart } from './BlurChart';
 import { SubjectControl } from './SubjectControl';
 import { AddSystem } from './AddSystem';
 import { SystemList } from './SystemList';
-import { CompareLookPanel } from './CompareLookPanel';
 
 export function ComparePage() {
   const { systems, subjectWidthM, setSubjectWidthM, focusOverrideM, setFocusOverrideM } = useCompare();
@@ -21,8 +20,8 @@ export function ComparePage() {
       {/* Main: framing controls + the chart filling the rest */}
       <div className="order-1 flex min-w-0 flex-1 flex-col gap-4 p-4 lg:order-2 lg:p-6">
         <p className="max-w-prose text-sm text-muted">
-          Plot background blur (% of frame width) against how far behind the subject things fall —
-          higher line = more melt. Add up to four systems and read them off at any distance.
+          Pick how much of the frame the subject occupies. The chart calculates where each system must stand to frame that subject,
+          then plots how blurry the background becomes as it falls farther behind the subject.
         </p>
 
         <SubjectControl
@@ -31,8 +30,6 @@ export function ComparePage() {
           focusM={focusOverrideM}
           onFocusChange={setFocusOverrideM}
         />
-
-        <CompareLookPanel systems={systems} subjectWidthM={subjectWidthM} focusOverrideM={focusOverrideM} />
 
         <div className="min-h-[60vh] lg:min-h-0 lg:flex-1">
           <BlurChart systems={systems} subjectWidthM={subjectWidthM} focusOverrideM={focusOverrideM} />
