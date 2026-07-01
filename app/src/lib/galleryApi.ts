@@ -24,8 +24,10 @@ export type EmbedTheme = 'light' | 'dark' | 'system';
 export type EmbedDensity = 'compact' | 'comfortable';
 export type EmbedFrameStyle = 'minimal' | 'technical' | 'editorial';
 export type EmbedImageFit = 'cover' | 'contain';
+export type EmbedImagePosition = 'auto' | 'center' | 'top' | 'bottom';
 export type EmbedMetadataPlacement = 'bottom' | 'left' | 'right';
 export type EmbedAlbumLayout = 'grid' | 'carousel';
+export type EmbedOpenButtonPlacement = 'metadata' | 'below' | 'top-right';
 
 export type EmbedFieldId =
   | 'camera'
@@ -43,16 +45,48 @@ export interface EmbedTemplate {
   density: EmbedDensity;
   frameStyle: EmbedFrameStyle;
   imageFit: EmbedImageFit;
+  imagePosition: EmbedImagePosition;
   maxLongEdge: number;
   metadataPlacement: EmbedMetadataPlacement;
   showMetadata: boolean;
   defaultTargetFormatId: string;
   visibleFields: EmbedFieldId[];
   ctaLabel: string;
+  showOpenButton: boolean;
+  openButtonPlacement: EmbedOpenButtonPlacement;
   showEquivalent: boolean;
   albumLayout: EmbedAlbumLayout;
   albumCount: number;
   albumColumns: number;
+  showAlbumHeader: boolean;
+  showCarouselControls: boolean;
+  image: EmbedModeTemplate;
+  gallery: EmbedGalleryModeTemplate;
+}
+
+export interface EmbedModeTemplate {
+  theme: EmbedTheme;
+  density: EmbedDensity;
+  frameStyle: EmbedFrameStyle;
+  imageFit: EmbedImageFit;
+  imagePosition: EmbedImagePosition;
+  maxLongEdge: number;
+  metadataPlacement: EmbedMetadataPlacement;
+  showMetadata: boolean;
+  defaultTargetFormatId: string;
+  visibleFields: EmbedFieldId[];
+  ctaLabel: string;
+  showOpenButton: boolean;
+  openButtonPlacement: EmbedOpenButtonPlacement;
+  showEquivalent: boolean;
+}
+
+export interface EmbedGalleryModeTemplate extends EmbedModeTemplate {
+  albumLayout: EmbedAlbumLayout;
+  albumCount: number;
+  albumColumns: number;
+  showAlbumHeader: boolean;
+  showCarouselControls: boolean;
 }
 
 export interface GalleryAlbum {

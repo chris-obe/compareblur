@@ -12,7 +12,7 @@ export const onRequestGet: PagesFunction<GalleryEnv> = async ({ env, params, req
   const requested = Number(new URL(request.url).searchParams.get('count'));
   const count = Number.isFinite(requested) && requested > 0
     ? Math.min(24, Math.round(requested))
-    : template.albumCount;
+    : template.gallery.albumCount;
   const photos = album.photos.slice(0, count);
 
   return publicJson({

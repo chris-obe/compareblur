@@ -46,5 +46,5 @@ export function EmbedPhoto() {
     );
   }
 
-  return <PhotoEmbedCard photo={data.photo} album={data.album} template={data.template} linkHref={linkHref} />;
+  return <PhotoEmbedCard photo={data.photo} album={data.album} template={data.template.image} linkHref={linkHref} />;
 }

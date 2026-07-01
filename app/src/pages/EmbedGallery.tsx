@@ -61,21 +61,27 @@ export function EmbedGallery({ mode }: { mode: 'album' | 'set' }) {
 
   const layout: EmbedAlbumLayout = layoutParam === 'carousel' || layoutParam === 'grid'
     ? layoutParam
-    : data.template.albumLayout;
+    : data.template.gallery.albumLayout;
 
   const linkHrefFor = (photo: GalleryItem) =>
     data.album?.slug
       ? `/g/${encodeURIComponent(data.album.slug)}/photo/${encodeURIComponent(photo.id)}`
       : `/gallery/photo/${encodeURIComponent(photo.id)}`;
+  const openHref = data.album?.slug
+    ? `/g/${encodeURIComponent(data.album.slug)}`
+    : data.photos[0]
+      ? `/gallery/photo/${encodeURIComponent(data.photos[0].id)}`
+      : '/';
 
   return (
     <EmbedGalleryCard
       photos={data.photos}
-      template={data.template}
+      template={data.template.gallery}
       layout={layout}
-      columns={data.template.albumColumns}
+      columns={data.template.gallery.albumColumns}
       album={data.album}
       linkHrefFor={linkHrefFor}
+      openHref={openHref}
     />
   );
 }

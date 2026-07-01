@@ -35,8 +35,10 @@ const TITLES: Record<DialogMode, string> = {
 // One iframe-builder surface for all three album-owner entry points. Live-updates
 // the snippet as layout/count change, reusing the shared embedSnippet helpers.
 export function EmbedCodeDialog({ mode, template, onClose, photo, albumSlug, albumTitle, photoIds = [] }: Props) {
-  const [layout, setLayout] = useState<EmbedLayout>(template.albumLayout);
-  const [count, setCount] = useState(template.albumCount);
+  const imageTemplate = template.image;
+  const galleryTemplate = template.gallery;
+  const [layout, setLayout] = useState<EmbedLayout>(galleryTemplate.albumLayout);
+  const [count, setCount] = useState(galleryTemplate.albumCount);
   const [copied, setCopied] = useState(false);
 
   const { src, snippet } = useMemo(() => {
@@ -51,14 +53,14 @@ export function EmbedCodeDialog({ mode, template, onClose, photo, albumSlug, alb
       src: url,
       snippet: url
         ? iframeSnippet(url, title, {
-            maxLongEdge: template.maxLongEdge,
+            maxLongEdge: mode === 'photo' ? imageTemplate.maxLongEdge : galleryTemplate.maxLongEdge,
             mode: snippetMode,
             count: frames,
-            columns: template.albumColumns,
+            columns: galleryTemplate.albumColumns,
           })
         : '',
     };
-  }, [mode, layout, count, photo, albumSlug, albumTitle, photoIds, template]);
+  }, [mode, layout, count, photo, albumSlug, albumTitle, photoIds, imageTemplate.maxLongEdge, galleryTemplate.maxLongEdge, galleryTemplate.albumColumns]);
 
   const copy = async () => {
     if (!snippet) return;
@@ -134,7 +136,7 @@ export function EmbedCodeDialog({ mode, template, onClose, photo, albumSlug, alb
                   value={count}
                   onChange={(event) => {
                     const next = Number(event.target.value);
-                    setCount(Number.isFinite(next) ? Math.max(1, Math.min(24, Math.round(next))) : template.albumCount);
+                    setCount(Number.isFinite(next) ? Math.max(1, Math.min(24, Math.round(next))) : galleryTemplate.albumCount);
                   }}
                   className="h-9 w-24 border border-line bg-transparent px-2 text-xs outline-none focus:border-line-strong"
                 />

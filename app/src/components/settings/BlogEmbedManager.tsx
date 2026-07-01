@@ -18,8 +18,10 @@ import {
   EMBED_SIZE_PRESETS,
   MAX_EMBED_LONG_EDGE,
   MIN_EMBED_LONG_EDGE,
+  templateForMode,
+  updateTemplateMode,
 } from '../../lib/embedTemplate';
-import { clampEmbedLongEdge, iframeSnippet, photoEmbedUrl } from '../../lib/embedSnippet';
+import { albumEmbedUrl, clampEmbedLongEdge, iframeSnippet, photoEmbedUrl } from '../../lib/embedSnippet';
 import { GALLERY_FORMAT_OPTIONS, formatOptionLabel } from '../../lib/galleryFormat';
 import {
   getAdminEmbedSettings,
@@ -28,6 +30,8 @@ import {
   updateAdminEmbedSettings,
   type AdminGalleryPhoto,
   type EmbedFieldId,
+  type EmbedGalleryModeTemplate,
+  type EmbedModeTemplate,
   type EmbedTemplate,
   type GalleryAlbum,
 } from '../../lib/galleryApi';
@@ -38,6 +42,7 @@ import { Button } from '../ui/Button';
 export function BlogEmbedManager() {
   const { getAccessTokenSilently, isAuthenticated } = useAuth0();
   const [template, setTemplate] = useState<EmbedTemplate>(DEFAULT_EMBED_TEMPLATE);
+  const [mode, setMode] = useState<'image' | 'gallery'>('image');
   const [photos, setPhotos] = useState<AdminGalleryPhoto[]>([]);
   const [albums, setAlbums] = useState<GalleryAlbum[]>([]);
   const [previewPhotoId, setPreviewPhotoId] = useState('');
@@ -56,6 +61,9 @@ export function BlogEmbedManager() {
   const publishedAlbums = useMemo(() => albums.filter((album) => album.status === 'published'), [albums]);
   const previewPhoto = approvedPhotos.find((photo) => photo.id === previewPhotoId) ?? approvedPhotos[0] ?? null;
   const previewAlbum = publishedAlbums.find((album) => album.slug === previewAlbumSlug) ?? null;
+  const modeTemplate = templateForMode(template, mode);
+  const imageTemplate = templateForMode(template, 'image');
+  const galleryTemplate = templateForMode(template, 'gallery');
   const previewPhotoForCard = previewPhoto ? { ...previewPhoto, src: `/api/gallery/photos/${previewPhoto.id}/image` } : null;
   const previewAlbumPhotos = useMemo(() => {
     const source = previewAlbum?.photos.length
@@ -63,12 +71,24 @@ export function BlogEmbedManager() {
           .map((albumPhoto) => approvedPhotos.find((photo) => photo.id === albumPhoto.id) ?? albumPhoto)
       : approvedPhotos;
     return source
-      .slice(0, template.albumCount)
+      .slice(0, galleryTemplate.albumCount)
       .map((photo) => ({ ...photo, src: `/api/gallery/photos/${photo.id}/image` }));
-  }, [approvedPhotos, previewAlbum, template.albumCount]);
+  }, [approvedPhotos, galleryTemplate.albumCount, previewAlbum]);
   const embedUrl = previewPhoto ? photoEmbedUrl(previewPhoto.id, previewAlbum?.slug) : '';
-  const iframeCode = previewPhoto ? iframeSnippet(embedUrl, previewPhoto.title, { maxLongEdge: template.maxLongEdge }) : '';
-  const visibleFieldSet = new Set(template.visibleFields);
+  const galleryEmbedUrl = previewAlbum
+    ? albumEmbedUrl(previewAlbum.slug, { count: galleryTemplate.albumCount, layout: galleryTemplate.albumLayout })
+    : '';
+  const iframeCode = mode === 'image' && previewPhoto
+    ? iframeSnippet(embedUrl, previewPhoto.title, { maxLongEdge: imageTemplate.maxLongEdge })
+    : mode === 'gallery' && previewAlbum
+      ? iframeSnippet(galleryEmbedUrl, previewAlbum.title, {
+          maxLongEdge: galleryTemplate.maxLongEdge,
+          mode: galleryTemplate.albumLayout,
+          count: galleryTemplate.albumCount,
+          columns: galleryTemplate.albumColumns,
+        })
+      : '';
+  const visibleFieldSet = new Set(modeTemplate.visibleFields);
   const hiddenFields = EMBED_FIELD_OPTIONS.filter((field) => !visibleFieldSet.has(field.id));
 
   const load = async () => {
@@ -112,6 +132,11 @@ export function BlogEmbedManager() {
     }
   };
 
+  const saveMode = async (targetMode: 'image' | 'gallery') => {
+    setMode(targetMode);
+    await saveTemplate();
+  };
+
   const copyIframe = async () => {
     if (!iframeCode) return;
     await navigator.clipboard.writeText(iframeCode);
@@ -119,38 +144,62 @@ export function BlogEmbedManager() {
     window.setTimeout(() => setCopied(false), 1200);
   };
 
-  const updateTemplate = <K extends keyof EmbedTemplate>(key: K, value: EmbedTemplate[K]) => {
-    setTemplate((current) => ({ ...current, [key]: value }));
+  const updateImageTemplate = <K extends keyof EmbedModeTemplate>(key: K, value: EmbedModeTemplate[K]) => {
+    setTemplate((current) => updateTemplateMode(current, 'image', { [key]: value } as Partial<EmbedModeTemplate>));
+  };
+
+  const updateGalleryTemplate = <K extends keyof EmbedGalleryModeTemplate>(
+    key: K,
+    value: EmbedGalleryModeTemplate[K],
+  ) => {
+    setTemplate((current) => updateTemplateMode(current, 'gallery', { [key]: value } as Partial<EmbedGalleryModeTemplate>));
+  };
+
+  const updateModeTemplate = <K extends keyof EmbedGalleryModeTemplate>(key: K, value: EmbedGalleryModeTemplate[K]) => {
+    if (mode === 'image') {
+      updateImageTemplate(key as keyof EmbedModeTemplate, value as EmbedModeTemplate[keyof EmbedModeTemplate]);
+      return;
+    }
+    updateGalleryTemplate(key, value);
   };
 
   const moveFieldToVisible = (fieldId: EmbedFieldId, index?: number) => {
     setTemplate((current) => {
-      if (current.visibleFields.includes(fieldId)) return current;
-      if (current.visibleFields.length >= EMBED_METADATA_LIMIT) return current;
-      const next = [...current.visibleFields];
+      const currentMode = templateForMode(current, mode);
+      if (currentMode.visibleFields.includes(fieldId)) return current;
+      if (currentMode.visibleFields.length >= EMBED_METADATA_LIMIT) return current;
+      const next = [...currentMode.visibleFields];
       const insertionIndex = index == null ? next.length : Math.max(0, Math.min(index, next.length));
       next.splice(insertionIndex, 0, fieldId);
-      return { ...current, visibleFields: next };
+      return mode === 'image'
+        ? updateTemplateMode(current, 'image', { visibleFields: next })
+        : updateTemplateMode(current, 'gallery', { visibleFields: next });
     });
   };
 
   const moveFieldWithinVisible = (fieldId: EmbedFieldId, index: number) => {
     setTemplate((current) => {
-      const currentIndex = current.visibleFields.indexOf(fieldId);
+      const currentMode = templateForMode(current, mode);
+      const currentIndex = currentMode.visibleFields.indexOf(fieldId);
       if (currentIndex === -1) return current;
-      const next = [...current.visibleFields];
+      const next = [...currentMode.visibleFields];
       next.splice(currentIndex, 1);
       const insertionIndex = Math.max(0, Math.min(index, next.length));
       next.splice(insertionIndex, 0, fieldId);
-      return { ...current, visibleFields: next };
+      return mode === 'image'
+        ? updateTemplateMode(current, 'image', { visibleFields: next })
+        : updateTemplateMode(current, 'gallery', { visibleFields: next });
     });
   };
 
   const hideField = (fieldId: EmbedFieldId) => {
-    setTemplate((current) => ({
-      ...current,
-      visibleFields: current.visibleFields.filter((field) => field !== fieldId),
-    }));
+    setTemplate((current) => {
+      const currentMode = templateForMode(current, mode);
+      const visibleFields = currentMode.visibleFields.filter((field) => field !== fieldId);
+      return mode === 'image'
+        ? updateTemplateMode(current, 'image', { visibleFields })
+        : updateTemplateMode(current, 'gallery', { visibleFields });
+    });
   };
 
   const handleFieldDragStart = (fieldId: EmbedFieldId, source: 'visible' | 'hidden') => {
@@ -165,7 +214,7 @@ export function BlogEmbedManager() {
 
   const handleDropOnVisible = (index?: number) => {
     if (!dragFieldId || !dragSource) return;
-    if (dragSource === 'visible') moveFieldWithinVisible(dragFieldId, index ?? template.visibleFields.length);
+    if (dragSource === 'visible') moveFieldWithinVisible(dragFieldId, index ?? modeTemplate.visibleFields.length);
     if (dragSource === 'hidden') moveFieldToVisible(dragFieldId, index);
     clearDrag();
   };
@@ -190,7 +239,7 @@ export function BlogEmbedManager() {
           </Button>
           <Button variant="solid" onClick={saveTemplate} disabled={saving}>
             <Save size={14} strokeWidth={1.5} />
-            Save template
+            Save all
           </Button>
         </div>
       </div>
@@ -203,37 +252,32 @@ export function BlogEmbedManager() {
             {previewPhotoForCard ? (
               <div className="space-y-3">
                 <div className="text-xs text-muted">
-                  Live preview of the saved public embed. Metadata cards are capped at {EMBED_METADATA_LIMIT} visible items.
+                  Live preview of the {mode === 'image' ? 'image' : 'multi-image'} embed mode.
                 </div>
                 <div className="overflow-hidden border border-line bg-faint">
-                  <PhotoEmbedCard
-                    photo={previewPhotoForCard}
-                    template={template}
-                    album={previewAlbum}
-                    linkHref={previewAlbum ? `/g/${previewAlbum.slug}/photo/${previewPhotoForCard.id}` : `/gallery/photo/${previewPhotoForCard.id}`}
-                    preview
-                  />
+                  {mode === 'image' ? (
+                    <PhotoEmbedCard
+                      photo={previewPhotoForCard}
+                      template={imageTemplate}
+                      album={previewAlbum}
+                      linkHref={previewAlbum ? `/g/${previewAlbum.slug}/photo/${previewPhotoForCard.id}` : `/gallery/photo/${previewPhotoForCard.id}`}
+                      preview
+                    />
+                  ) : (
+                    <EmbedGalleryCard
+                      photos={previewAlbumPhotos}
+                      template={galleryTemplate}
+                      layout={galleryTemplate.albumLayout}
+                      columns={galleryTemplate.albumColumns}
+                      album={previewAlbum}
+                      linkHrefFor={(photo) => previewAlbum
+                        ? `/g/${previewAlbum.slug}/photo/${photo.id}`
+                        : `/gallery/photo/${photo.id}`}
+                      openHref={previewAlbum ? `/g/${previewAlbum.slug}` : previewAlbumPhotos[0] ? `/gallery/photo/${previewAlbumPhotos[0].id}` : '/'}
+                      preview
+                    />
+                  )}
                 </div>
-                {previewAlbumPhotos.length > 0 && (
-                  <div className="space-y-2 pt-2">
-                    <div className="text-xs text-muted">
-                      Multi-image preview uses the album defaults below.
-                    </div>
-                    <div className="max-h-[36rem] overflow-auto border border-line bg-faint">
-                      <EmbedGalleryCard
-                        photos={previewAlbumPhotos}
-                        template={template}
-                        layout={template.albumLayout}
-                        columns={template.albumColumns}
-                        album={previewAlbum}
-                        linkHrefFor={(photo) => previewAlbum
-                          ? `/g/${previewAlbum.slug}/photo/${photo.id}`
-                          : `/gallery/photo/${photo.id}`}
-                        preview
-                      />
-                    </div>
-                  </div>
-                )}
               </div>
             ) : (
               <div className="border border-line px-4 py-8 text-center text-xs text-muted">No approved photos available.</div>
@@ -244,6 +288,21 @@ export function BlogEmbedManager() {
         <aside className="space-y-5">
           <Panel title="Customization">
             <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-2">
+                <ModeButton active={mode === 'image'} label="Image" onClick={() => setMode('image')} />
+                <ModeButton active={mode === 'gallery'} label="Multi image" onClick={() => setMode('gallery')} />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <Button onClick={() => saveMode('image')} disabled={saving}>
+                  <Save size={14} strokeWidth={1.5} />
+                  Save image
+                </Button>
+                <Button onClick={() => saveMode('gallery')} disabled={saving}>
+                  <Save size={14} strokeWidth={1.5} />
+                  Save multi
+                </Button>
+              </div>
+
               <label className="block">
                 <span className="label mb-2 block">Preview photo</span>
                 <select
@@ -272,107 +331,159 @@ export function BlogEmbedManager() {
               </label>
 
               <div>
-                <span className="label mb-2 block">Metadata placement</span>
+                <span className="label mb-2 block">{mode === 'image' ? 'Metadata placement' : 'Open button placement'}</span>
                 <div className="grid grid-cols-3 gap-2">
                   <PlacementButton
-                    active={template.metadataPlacement === 'left'}
+                    active={mode === 'image' ? imageTemplate.metadataPlacement === 'left' : galleryTemplate.openButtonPlacement === 'metadata'}
                     icon={<ArrowLeft size={14} strokeWidth={1.5} />}
-                    label="Left"
-                    onClick={() => updateTemplate('metadataPlacement', 'left')}
+                    label={mode === 'image' ? 'Left' : 'Header'}
+                    onClick={() => mode === 'image' ? updateImageTemplate('metadataPlacement', 'left') : updateGalleryTemplate('openButtonPlacement', 'metadata')}
                   />
                   <PlacementButton
-                    active={template.metadataPlacement === 'bottom'}
+                    active={mode === 'image' ? imageTemplate.metadataPlacement === 'bottom' : galleryTemplate.openButtonPlacement === 'below'}
                     icon={<ArrowDown size={14} strokeWidth={1.5} />}
                     label="Bottom"
-                    onClick={() => updateTemplate('metadataPlacement', 'bottom')}
+                    onClick={() => mode === 'image' ? updateImageTemplate('metadataPlacement', 'bottom') : updateGalleryTemplate('openButtonPlacement', 'below')}
                   />
                   <PlacementButton
-                    active={template.metadataPlacement === 'right'}
+                    active={mode === 'image' ? imageTemplate.metadataPlacement === 'right' : galleryTemplate.openButtonPlacement === 'top-right'}
                     icon={<ArrowRight size={14} strokeWidth={1.5} />}
-                    label="Right"
-                    onClick={() => updateTemplate('metadataPlacement', 'right')}
+                    label={mode === 'image' ? 'Right' : 'Top'}
+                    onClick={() => mode === 'image' ? updateImageTemplate('metadataPlacement', 'right') : updateGalleryTemplate('openButtonPlacement', 'top-right')}
                   />
                 </div>
               </div>
 
               <ToggleRow
-                label="Metadata cards"
-                active={template.showMetadata}
-                onToggle={() => updateTemplate('showMetadata', !template.showMetadata)}
+                label="Open in blur button"
+                active={modeTemplate.showOpenButton}
+                onToggle={() => updateModeTemplate('showOpenButton', !modeTemplate.showOpenButton)}
               />
+              {mode === 'image' && (
+                <div>
+                  <span className="label mb-2 block">Open button placement</span>
+                  <div className="grid grid-cols-3 gap-2">
+                    <PlacementButton
+                      active={imageTemplate.openButtonPlacement === 'metadata'}
+                      icon={<ArrowLeft size={14} strokeWidth={1.5} />}
+                      label="Metadata"
+                      onClick={() => updateImageTemplate('openButtonPlacement', 'metadata')}
+                    />
+                    <PlacementButton
+                      active={imageTemplate.openButtonPlacement === 'below'}
+                      icon={<ArrowDown size={14} strokeWidth={1.5} />}
+                      label="Bottom"
+                      onClick={() => updateImageTemplate('openButtonPlacement', 'below')}
+                    />
+                    <PlacementButton
+                      active={imageTemplate.openButtonPlacement === 'top-right'}
+                      icon={<ArrowRight size={14} strokeWidth={1.5} />}
+                      label="Top"
+                      onClick={() => updateImageTemplate('openButtonPlacement', 'top-right')}
+                    />
+                  </div>
+                </div>
+              )}
               <ToggleRow
-                label="Equivalent note"
-                active={template.showEquivalent}
-                onToggle={() => updateTemplate('showEquivalent', !template.showEquivalent)}
+                label={mode === 'image' ? 'Metadata cards' : 'Per-image metadata'}
+                active={modeTemplate.showMetadata}
+                onToggle={() => updateModeTemplate('showMetadata', !modeTemplate.showMetadata)}
               />
+              {mode === 'image' && (
+                <ToggleRow
+                  label="Equivalent note"
+                  active={imageTemplate.showEquivalent}
+                  onToggle={() => updateImageTemplate('showEquivalent', !imageTemplate.showEquivalent)}
+                />
+              )}
+              {mode === 'gallery' && (
+                <>
+                  <ToggleRow
+                    label="Album header"
+                    active={galleryTemplate.showAlbumHeader}
+                    onToggle={() => updateGalleryTemplate('showAlbumHeader', !galleryTemplate.showAlbumHeader)}
+                  />
+                  <ToggleRow
+                    label="Carousel arrows"
+                    active={galleryTemplate.showCarouselControls}
+                    onToggle={() => updateGalleryTemplate('showCarouselControls', !galleryTemplate.showCarouselControls)}
+                  />
+                </>
+              )}
 
               <Select
                 label="Theme"
-                value={template.theme}
+                value={modeTemplate.theme}
                 options={['light', 'dark', 'system']}
-                onChange={(value) => updateTemplate('theme', value as EmbedTemplate['theme'])}
+                onChange={(value) => updateModeTemplate('theme', value as EmbedModeTemplate['theme'])}
               />
               <Select
                 label="Density"
-                value={template.density}
+                value={modeTemplate.density}
                 options={['compact', 'comfortable']}
-                onChange={(value) => updateTemplate('density', value as EmbedTemplate['density'])}
+                onChange={(value) => updateModeTemplate('density', value as EmbedModeTemplate['density'])}
               />
               <Select
                 label="Frame"
-                value={template.frameStyle}
+                value={modeTemplate.frameStyle}
                 options={['minimal', 'technical', 'editorial']}
-                onChange={(value) => updateTemplate('frameStyle', value as EmbedTemplate['frameStyle'])}
+                onChange={(value) => updateModeTemplate('frameStyle', value as EmbedModeTemplate['frameStyle'])}
               />
               <Select
                 label="Image fit"
-                value={template.imageFit}
+                value={modeTemplate.imageFit}
                 options={['cover', 'contain']}
-                onChange={(value) => updateTemplate('imageFit', value as EmbedTemplate['imageFit'])}
+                onChange={(value) => updateModeTemplate('imageFit', value as EmbedModeTemplate['imageFit'])}
+              />
+              <Select
+                label="Image position"
+                value={modeTemplate.imagePosition}
+                options={['auto', 'center', 'top', 'bottom']}
+                onChange={(value) => updateModeTemplate('imagePosition', value as EmbedModeTemplate['imagePosition'])}
               />
 
               <EmbedSizeField
-                value={template.maxLongEdge}
-                onChange={(value) => updateTemplate('maxLongEdge', value)}
+                value={modeTemplate.maxLongEdge}
+                onChange={(value) => updateModeTemplate('maxLongEdge', value)}
               />
 
-              <div className="space-y-3 border border-line p-3">
+              {mode === 'gallery' && <div className="space-y-3 border border-line p-3">
                 <div>
                   <div className="label mb-1">Albums</div>
                   <div className="text-xs text-muted">
-                    Defaults for album and selected-photo iframes.
+                    Defaults for album and selected-set iframes.
                   </div>
                 </div>
                 <Select
                   label="Multi-image layout"
-                  value={template.albumLayout}
+                  value={galleryTemplate.albumLayout}
                   options={['grid', 'carousel']}
-                  onChange={(value) => updateTemplate('albumLayout', value as EmbedTemplate['albumLayout'])}
+                  onChange={(value) => updateGalleryTemplate('albumLayout', value as EmbedGalleryModeTemplate['albumLayout'])}
                 />
                 <div className="grid gap-3 sm:grid-cols-2">
                   <NumberField
                     label="Frames"
-                    value={template.albumCount}
+                    value={galleryTemplate.albumCount}
                     min={1}
                     max={24}
-                    onChange={(value) => updateTemplate('albumCount', value)}
+                    onChange={(value) => updateGalleryTemplate('albumCount', value)}
                   />
                   <NumberField
                     label="Grid columns"
-                    value={template.albumColumns}
+                    value={galleryTemplate.albumColumns}
                     min={2}
                     max={4}
-                    disabled={template.albumLayout !== 'grid'}
-                    onChange={(value) => updateTemplate('albumColumns', value)}
+                    disabled={galleryTemplate.albumLayout !== 'grid'}
+                    onChange={(value) => updateGalleryTemplate('albumColumns', value)}
                   />
                 </div>
-              </div>
+              </div>}
 
               <label className="block">
                 <span className="label mb-2 block">Equivalent target</span>
                 <select
-                  value={template.defaultTargetFormatId}
-                  onChange={(event) => updateTemplate('defaultTargetFormatId', event.target.value)}
+                  value={modeTemplate.defaultTargetFormatId}
+                  onChange={(event) => updateModeTemplate('defaultTargetFormatId', event.target.value)}
                   className="h-9 w-full border border-line bg-transparent px-2 text-xs outline-none focus:border-line-strong"
                 >
                   {GALLERY_FORMAT_OPTIONS.map((format) => (
@@ -386,8 +497,8 @@ export function BlogEmbedManager() {
               <label className="block">
                 <span className="label mb-2 block">CTA label</span>
                 <input
-                  value={template.ctaLabel}
-                  onChange={(event) => updateTemplate('ctaLabel', event.target.value)}
+                  value={modeTemplate.ctaLabel}
+                  onChange={(event) => updateModeTemplate('ctaLabel', event.target.value)}
                   className="h-9 w-full border border-line bg-transparent px-2 text-xs outline-none focus:border-line-strong"
                 />
               </label>
@@ -406,7 +517,7 @@ export function BlogEmbedManager() {
                 className="space-y-2 border border-line p-3"
               >
                 <div className="label">Visible cards</div>
-                {template.visibleFields.map((fieldId, index) => {
+                {modeTemplate.visibleFields.map((fieldId, index) => {
                   const field = EMBED_FIELD_OPTIONS.find((item) => item.id === fieldId);
                   if (!field) return null;
                   return (
@@ -421,7 +532,7 @@ export function BlogEmbedManager() {
                     />
                   );
                 })}
-                {template.visibleFields.length === 0 && (
+                {modeTemplate.visibleFields.length === 0 && (
                   <div className="border border-dashed border-line px-3 py-4 text-center text-xs text-muted">
                     Drop fields here.
                   </div>
@@ -440,7 +551,7 @@ export function BlogEmbedManager() {
                       key={field.id}
                       field={field}
                       kind="hidden"
-                      disabled={template.visibleFields.length >= EMBED_METADATA_LIMIT}
+                      disabled={modeTemplate.visibleFields.length >= EMBED_METADATA_LIMIT}
                       onDragStart={() => handleFieldDragStart(field.id, 'hidden')}
                       onDragEnd={clearDrag}
                       onDrop={() => undefined}
@@ -488,6 +599,21 @@ function Panel({ title, children }: { title: string; children: ReactNode }) {
       <div className="label mb-3">{title}</div>
       {children}
     </section>
+  );
+}
+
+function ModeButton({ active, label, onClick }: { active: boolean; label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={[
+        'border px-3 py-2 text-xs uppercase tracking-wide transition-colors',
+        active ? 'border-fg bg-fg text-bg' : 'border-line text-muted hover:border-line-strong hover:text-fg',
+      ].join(' ')}
+    >
+      {label}
+    </button>
   );
 }
 

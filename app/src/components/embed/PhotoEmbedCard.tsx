@@ -2,12 +2,12 @@ import { ExternalLink } from 'lucide-react';
 import { computeMatch } from '../../lib/match';
 import { resolveGalleryFormat, formatDisplayName, GALLERY_FORMAT_OPTIONS } from '../../lib/galleryFormat';
 import { subjectPresetById } from '../../lib/subjectDistance';
-import type { EmbedFieldId, EmbedTemplate, GalleryAlbum } from '../../lib/galleryApi';
+import type { EmbedFieldId, EmbedModeTemplate, GalleryAlbum } from '../../lib/galleryApi';
 import type { GalleryItem } from '../../lib/types';
 
 interface Props {
   photo: GalleryItem;
-  template: EmbedTemplate;
+  template: EmbedModeTemplate;
   album?: GalleryAlbum | null;
   linkHref: string;
   preview?: boolean;
@@ -39,16 +39,17 @@ export function PhotoEmbedCard({ photo, template, album, linkHref, preview = fal
 
 interface FrameProps {
   photo: GalleryItem;
-  template: EmbedTemplate;
+  template: EmbedModeTemplate;
   album?: GalleryAlbum | null;
   linkHref: string;
   preview?: boolean;
   /** override the template placement (multi-image grids force 'bottom') */
-  placement?: EmbedTemplate['metadataPlacement'];
+  placement?: EmbedModeTemplate['metadataPlacement'];
   /** suppress the album eyebrow line (multi-image shows one header instead) */
   showEyebrow?: boolean;
   /** denser image box for grid/carousel cells */
   compact?: boolean;
+  showAction?: boolean;
 }
 
 // The reusable framed unit (image box + metadata plaque). Shared by the single
@@ -62,6 +63,7 @@ export function EmbedPhotoFrame({
   placement: placementOverride,
   showEyebrow = true,
   compact = false,
+  showAction = true,
 }: FrameProps) {
   const { format } = resolveGalleryFormat(photo.formatId);
   const targetFormat = GALLERY_FORMAT_OPTIONS.find((candidate) => candidate.id === template.defaultTargetFormatId)
@@ -74,6 +76,9 @@ export function EmbedPhotoFrame({
   const frameClasses = frameStyleClasses(template.frameStyle);
   const cardGrid = placement === 'bottom' ? 'grid-cols-2 sm:grid-cols-3' : 'grid-cols-1';
   const equivalentText = `${formatDisplayName(targetFormat)} equivalent ${round1(match.equivalent.target.focal)}mm · f/${round1(match.equivalent.target.aperture)}`;
+  const openButton = template.showOpenButton && showAction ? (
+    <OpenButton href={linkHref} label={template.ctaLabel || 'Open in blur'} />
+  ) : null;
 
   const plaque = (
     <div className={plaqueClasses(template, placement)}>
@@ -98,15 +103,7 @@ export function EmbedPhotoFrame({
         </div>
       )}
 
-      <a
-        href={linkHref}
-        target="_blank"
-        rel="noreferrer"
-        className="inline-flex items-center gap-2 self-start border border-line px-3 py-2 text-[11px] uppercase tracking-[0.18em] transition-colors hover:border-line-strong"
-      >
-        {template.ctaLabel || 'Open in blur'}
-        <ExternalLink size={13} strokeWidth={1.5} />
-      </a>
+      {template.openButtonPlacement === 'metadata' && openButton}
     </div>
   );
 
@@ -129,6 +126,9 @@ export function EmbedPhotoFrame({
                 compact ? 'min-h-[16rem]' : preview ? 'min-h-[24rem]' : 'min-h-[32rem]',
               ].join(' ')}
             >
+              {template.openButtonPlacement === 'top-right' && openButton && (
+                <div className="absolute right-3 top-3 z-10">{openButton}</div>
+              )}
               <img
                 src={photo.src}
                 alt={photo.title}
@@ -136,15 +136,31 @@ export function EmbedPhotoFrame({
                   'h-full w-full',
                   template.imageFit === 'contain' ? 'object-contain p-4' : 'object-cover',
                 ].join(' ')}
+                style={{ objectPosition: imageObjectPosition(photo, template.imagePosition) }}
               />
             </div>
           </div>
+          {template.openButtonPlacement === 'below' && openButton}
           {placement === 'bottom' && plaque}
         </div>
 
         {placement === 'right' && plaque}
       </div>
     </div>
+  );
+}
+
+export function OpenButton({ href, label }: { href: string; label: string }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      className="inline-flex items-center gap-2 self-start border border-line bg-bg/90 px-3 py-2 text-[11px] uppercase tracking-[0.18em] transition-colors hover:border-line-strong"
+    >
+      {label}
+      <ExternalLink size={13} strokeWidth={1.5} />
+    </a>
   );
 }
 
@@ -183,13 +199,13 @@ export function safeLongEdge(value: number | undefined): number {
   return Math.max(320, Math.min(1600, Math.round(value ?? 960)));
 }
 
-export function themeClasses(theme: EmbedTemplate['theme']): string {
+export function themeClasses(theme: EmbedModeTemplate['theme']): string {
   if (theme === 'dark') return 'bg-[#0e0d0b] text-[#f3efe7]';
   if (theme === 'system') return 'bg-bg text-fg';
   return 'bg-[#f5f0e7] text-[#1f1a15]';
 }
 
-function frameStyleClasses(frameStyle: EmbedTemplate['frameStyle']) {
+function frameStyleClasses(frameStyle: EmbedModeTemplate['frameStyle']) {
   if (frameStyle === 'technical') {
     return {
       container: 'bg-[#111] text-[#f4f1ea]',
@@ -208,10 +224,21 @@ function frameStyleClasses(frameStyle: EmbedTemplate['frameStyle']) {
   };
 }
 
-function plaqueClasses(template: EmbedTemplate, placement: EmbedTemplate['metadataPlacement']) {
+function plaqueClasses(template: EmbedModeTemplate, placement: EmbedModeTemplate['metadataPlacement']) {
   return [
     'flex min-w-0 flex-col gap-3',
     template.density === 'compact' ? 'text-xs' : 'text-sm',
     placement === 'bottom' ? 'border-t border-line/60 pt-3' : 'justify-end self-stretch',
   ].join(' ');
+}
+
+function imageObjectPosition(photo: GalleryItem, position: EmbedModeTemplate['imagePosition']): string {
+  if (position === 'top') return 'center top';
+  if (position === 'bottom') return 'center bottom';
+  if (position === 'center') return 'center center';
+  const dimensions = photo as GalleryItem & { width?: number; height?: number };
+  if (dimensions.width && dimensions.height && dimensions.height > dimensions.width * 1.25) {
+    return 'center 38%';
+  }
+  return 'center center';
 }
