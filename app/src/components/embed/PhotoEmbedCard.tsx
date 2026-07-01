@@ -82,6 +82,8 @@ export function EmbedPhotoFrame({
   ) : null;
   const frameWidth = effectiveFrameWidth(template);
   const frameColor = frameColorValue(template.frameColor);
+  const intrinsicAspect = imageAspectRatio(photo);
+  const preserveAspectBox = !template.squareImages && template.imageFit === 'contain' && intrinsicAspect;
 
   const plaque = (
     <div className={plaqueClasses(template, placement)}>
@@ -132,12 +134,15 @@ export function EmbedPhotoFrame({
                 template.squareImages ? '' : 'bg-bg',
                 template.squareImages
                   ? 'aspect-square'
-                  : compact
+                  : preserveAspectBox
+                    ? ''
+                    : compact
                     ? 'min-h-[16rem]'
                     : preview
                       ? 'min-h-[24rem]'
                       : 'min-h-[32rem]',
               ].join(' ')}
+              style={preserveAspectBox ? { aspectRatio: intrinsicAspect } : undefined}
             >
               {template.openButtonPlacement === 'top-right' && openButton && (
                 <div className="absolute right-3 top-3 z-10">{openButton}</div>
@@ -272,6 +277,12 @@ function imageObjectPosition(photo: GalleryItem, position: EmbedModeTemplate['im
     return 'center 38%';
   }
   return 'center center';
+}
+
+function imageAspectRatio(photo: GalleryItem): string | null {
+  const dimensions = photo as GalleryItem & { width?: number; height?: number };
+  if (!dimensions.width || !dimensions.height || dimensions.width <= 0 || dimensions.height <= 0) return null;
+  return `${dimensions.width} / ${dimensions.height}`;
 }
 
 export function effectiveFrameWidth(template: Pick<EmbedModeTemplate, 'frameWidth' | 'maxLongEdge'>): number {
