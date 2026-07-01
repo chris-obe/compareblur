@@ -394,6 +394,19 @@ export function AccountAlbumsManager({ mode, routeAlbumSlug }: Props) {
     try {
       const token = await getToken();
       setAccessToken(token);
+      const updatedPhotos: AdminGalleryPhoto[] = [];
+      for (const photo of albumPhotos) {
+        const draft = photoDrafts[photo.id];
+        if (!draft || !photoDraftChanged(photo, draft)) continue;
+        updatedPhotos.push(await updateAccountGalleryPhoto(photo.id, photoUpdatePayload(photo, draft), token));
+      }
+      if (updatedPhotos.length > 0) {
+        setPhotos((current) => mergePhotos(current, updatedPhotos));
+        setPhotoDrafts((current) => ({
+          ...current,
+          ...Object.fromEntries(updatedPhotos.map((photo) => [photo.id, draftFromPhoto(photo)])),
+        }));
+      }
       const album = selectedAlbumSlug
         ? await updateAccountGalleryAlbum(selectedAlbumSlug, albumPayload(albumDraft), token)
         : await createAccountGalleryAlbum(albumPayload(albumDraft), token);
@@ -403,36 +416,6 @@ export function AccountAlbumsManager({ mode, routeAlbumSlug }: Props) {
       if (mode === 'page') navigate(`/albums/${encodeURIComponent(latest.slug)}?mode=edit`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Album save failed');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const savePhoto = async (photo: AdminGalleryPhoto) => {
-    const draft = photoDrafts[photo.id];
-    if (!draft) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const token = await getToken();
-      setAccessToken(token);
-      const updated = await updateAccountGalleryPhoto(photo.id, {
-        title: draft.title,
-        camera: draft.camera,
-        lens: draft.lens,
-        formatId: normalizedFormatId(draft.formatId),
-        focal: numberOrFallback(draft.focal, photo.focal),
-        aperture: numberOrFallback(draft.aperture, photo.aperture),
-        subjectPreset: draft.subjectPreset,
-        shutterSpeed: draft.shutterSpeed || null,
-        iso: draft.iso.trim() ? numberOrFallback(draft.iso, 0) : null,
-        capturedAt: draft.capturedAt || null,
-        notes: draft.notes,
-      }, token);
-      setPhotos((current) => mergePhotos(current, [updated]));
-      setPhotoDrafts((current) => ({ ...current, [updated.id]: draftFromPhoto(updated) }));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Photo save failed');
     } finally {
       setBusy(false);
     }
@@ -551,7 +534,6 @@ export function AccountAlbumsManager({ mode, routeAlbumSlug }: Props) {
       setSelectionAnchorId={setSelectionAnchorId}
       uploadFiles={uploadFiles}
       saveAlbum={saveAlbum}
-      savePhoto={savePhoto}
       submitSelectedToGallery={submitSelectedToGallery}
       withdrawSelectedFromGallery={withdrawSelectedFromGallery}
       reload={load}
@@ -686,7 +668,6 @@ function AlbumBuilder({
   setSelectionAnchorId,
   uploadFiles,
   saveAlbum,
-  savePhoto,
   submitSelectedToGallery,
   withdrawSelectedFromGallery,
   reload,
@@ -715,7 +696,6 @@ function AlbumBuilder({
   setSelectionAnchorId: Dispatch<SetStateAction<string | null>>;
   uploadFiles: (files: FileList | File[] | null) => Promise<void>;
   saveAlbum: () => Promise<void>;
-  savePhoto: (photo: AdminGalleryPhoto) => Promise<void>;
   submitSelectedToGallery: () => Promise<void>;
   withdrawSelectedFromGallery: () => Promise<void>;
   reload: () => Promise<{ photos: AdminGalleryPhoto[]; albums: GalleryAlbum[] } | null>;
@@ -906,8 +886,6 @@ function AlbumBuilder({
               setDrafts={setDrafts}
               setSelectedPhotoIds={setSelectedPhotoIds}
               setSelectionAnchorId={setSelectionAnchorId}
-              savePhoto={savePhoto}
-              busy={busy}
               accessToken={accessToken}
             />
           </section>
@@ -1009,7 +987,7 @@ function AlbumBuilder({
             <div className="space-y-2">
               <Button variant="solid" className="w-full" onClick={() => void saveAlbum()} disabled={busy || !albumDraft.title.trim()}>
                 <Save size={14} strokeWidth={1.5} />
-                {isNew ? 'Create album' : 'Save album'}
+                {isNew ? 'Create album' : 'Save'}
               </Button>
               <Button className="w-full" onClick={() => void reload()} disabled={loading || busy}>
                 <RefreshCw size={14} strokeWidth={1.5} />
@@ -1889,8 +1867,6 @@ function PhotoBulkTable({
   setDrafts,
   setSelectedPhotoIds,
   setSelectionAnchorId,
-  savePhoto,
-  busy,
   accessToken,
 }: {
   photos: AlbumPhotoView[];
@@ -1901,8 +1877,6 @@ function PhotoBulkTable({
   setDrafts: Dispatch<SetStateAction<Record<string, PhotoDraft>>>;
   setSelectedPhotoIds: Dispatch<SetStateAction<Set<string>>>;
   setSelectionAnchorId: Dispatch<SetStateAction<string | null>>;
-  savePhoto: (photo: AdminGalleryPhoto) => Promise<void>;
-  busy: boolean;
   accessToken: string | null;
 }) {
   const orderedIds = photos.map((photo) => photo.id);
@@ -1965,6 +1939,7 @@ function PhotoBulkTable({
 
             <div className="flex gap-1 lg:flex-col">
               <Button
+                className="h-9 w-9 shrink-0 px-0 py-0"
                 title={photo.visibility === 'visible' ? 'Hide from public album' : 'Show in public album'}
                 onClick={() => setAlbumDraft((current) => ({
                   ...current,
@@ -1974,13 +1949,10 @@ function PhotoBulkTable({
                 }))}
               >
                 {photo.visibility === 'visible' ? <Lock size={13} strokeWidth={1.5} /> : <Eye size={13} strokeWidth={1.5} />}
-                <span className="lg:sr-only">{photo.visibility === 'visible' ? 'Hide' : 'Show'}</span>
-              </Button>
-              <Button onClick={() => void savePhoto(photo)} disabled={busy} title="Save details">
-                <Save size={13} strokeWidth={1.5} />
-                <span className="lg:sr-only">Save</span>
+                <span className="sr-only">{photo.visibility === 'visible' ? 'Hide from public album' : 'Show in public album'}</span>
               </Button>
               <Button
+                className="h-9 w-9 shrink-0 px-0 py-0"
                 title="Remove from album"
                 onClick={() => setAlbumDraft((current) => ({
                   ...current,
@@ -1989,7 +1961,7 @@ function PhotoBulkTable({
                 }))}
               >
                 <X size={13} strokeWidth={1.5} />
-                <span className="lg:sr-only">Remove</span>
+                <span className="sr-only">Remove from album</span>
               </Button>
             </div>
           </div>
@@ -2260,6 +2232,37 @@ function draftFromPhoto(photo: AdminGalleryPhoto): PhotoDraft {
     capturedAt: photo.capturedAt ?? '',
     notes: photo.notes ?? '',
   };
+}
+
+function photoUpdatePayload(photo: AdminGalleryPhoto, draft: PhotoDraft): Partial<AdminGalleryPhoto> & Record<string, unknown> {
+  return {
+    title: draft.title,
+    camera: draft.camera,
+    lens: draft.lens,
+    formatId: normalizedFormatId(draft.formatId),
+    focal: numberOrFallback(draft.focal, photo.focal),
+    aperture: numberOrFallback(draft.aperture, photo.aperture),
+    subjectPreset: draft.subjectPreset,
+    shutterSpeed: draft.shutterSpeed || null,
+    iso: draft.iso.trim() ? numberOrFallback(draft.iso, 0) : null,
+    capturedAt: draft.capturedAt || null,
+    notes: draft.notes,
+  };
+}
+
+function photoDraftChanged(photo: AdminGalleryPhoto, draft: PhotoDraft): boolean {
+  const next = photoUpdatePayload(photo, draft);
+  return next.title !== photo.title
+    || next.camera !== photo.camera
+    || next.lens !== photo.lens
+    || next.formatId !== normalizedFormatId(photo.formatId)
+    || next.focal !== photo.focal
+    || next.aperture !== photo.aperture
+    || next.subjectPreset !== (photo.subjectPreset ?? DEFAULT_SUBJECT_DISTANCE_PRESET_ID)
+    || next.shutterSpeed !== (photo.shutterSpeed ?? null)
+    || next.iso !== (photo.iso ?? null)
+    || next.capturedAt !== (photo.capturedAt ?? null)
+    || next.notes !== (photo.notes ?? '');
 }
 
 function viewEntryFromAccountPhoto(photo: AdminGalleryPhoto): ViewEntry {
