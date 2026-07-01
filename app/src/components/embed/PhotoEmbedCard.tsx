@@ -128,7 +128,8 @@ export function EmbedPhotoFrame({
           >
             <div
               className={[
-                'relative w-full overflow-hidden bg-bg',
+                'relative w-full overflow-hidden',
+                template.squareImages ? '' : 'bg-bg',
                 template.squareImages
                   ? 'aspect-square'
                   : compact
@@ -146,7 +147,11 @@ export function EmbedPhotoFrame({
                 alt={photo.title}
                 className={[
                   'h-full w-full',
-                  template.imageFit === 'contain' ? 'object-contain p-4' : 'object-cover',
+                  template.squareImages
+                    ? 'object-contain'
+                    : template.imageFit === 'contain'
+                      ? 'object-contain p-4'
+                      : 'object-cover',
                 ].join(' ')}
                 style={{ objectPosition: imageObjectPosition(photo, template.imagePosition) }}
               />

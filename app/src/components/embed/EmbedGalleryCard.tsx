@@ -111,7 +111,7 @@ function ContactSheetCell({
 }) {
   const dimensions = photo as GalleryItem & { width?: number; height?: number };
   const ratio = dimensions.width && dimensions.height ? dimensions.width / dimensions.height : 1;
-  const span = columns >= 3 && ratio > 1.35 ? 'sm:col-span-2' : '';
+  const span = !template.squareImages && columns >= 3 && ratio > 1.35 ? 'sm:col-span-2' : '';
   const frameWidth = effectiveFrameWidth(template);
   const frameColor = frameColorValue(template.frameColor);
   const position = template.imagePosition === 'top'
@@ -132,13 +132,17 @@ function ContactSheetCell({
       className={['group block overflow-hidden border border-line bg-faint', template.squareImages ? 'aspect-square' : '', span].join(' ')}
       style={{ padding: frameWidth, backgroundColor: frameColor }}
     >
-      <div className={['h-full w-full overflow-hidden bg-bg', template.squareImages ? 'aspect-square' : 'min-h-40'].join(' ')}>
+      <div className={['h-full w-full overflow-hidden', template.squareImages ? 'aspect-square' : 'min-h-40 bg-bg'].join(' ')}>
         <img
           src={photo.src}
           alt={photo.title}
           className={[
             'h-full w-full transition-transform duration-200 group-hover:scale-[1.015]',
-            template.imageFit === 'contain' ? 'object-contain p-2' : 'object-cover',
+            template.squareImages
+              ? 'object-contain'
+              : template.imageFit === 'contain'
+                ? 'object-contain p-2'
+                : 'object-cover',
           ].join(' ')}
           style={{ objectPosition: position }}
         />

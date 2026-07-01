@@ -449,10 +449,10 @@ export function BlogEmbedManager() {
               <div className="space-y-3 border border-line p-3">
                 <div>
                   <div className="label mb-1">Frame options</div>
-                  <div className="text-xs text-muted">The frame shrinks the image area and applies to square crops too.</div>
+                  <div className="text-xs text-muted">The frame shrinks the image area. Square mode fits the full image inside a square matte.</div>
                 </div>
                 <ToggleRow
-                  label="Make images square"
+                  label="Square frame"
                   active={modeTemplate.squareImages}
                   onToggle={() => updateModeTemplate('squareImages', !modeTemplate.squareImages)}
                 />
