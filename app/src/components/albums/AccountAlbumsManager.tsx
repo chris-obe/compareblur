@@ -1,8 +1,10 @@
 import {
   useEffect,
+  lazy,
   useMemo,
   useRef,
   useState,
+  Suspense,
   type Dispatch,
   type DragEvent,
   type MouseEvent as ReactMouseEvent,
@@ -53,7 +55,7 @@ import {
   type GalleryAlbum,
   type GalleryAlbumStatus,
 } from '../../lib/galleryApi';
-import { GALLERY_FORMAT_OPTIONS, formatOptionLabel, resolveGalleryFormat } from '../../lib/galleryFormat';
+import { resolveGalleryFormat } from '../../lib/galleryFormat';
 import { suggestGalleryMetadata } from '../../lib/galleryMetadata';
 import {
   GALLERY_UPLOAD_MAX_BYTES,
@@ -61,15 +63,25 @@ import {
   processGalleryUploadImage,
   type ImageProcessingProgress,
 } from '../../lib/imageProcessing';
-import { DEFAULT_SUBJECT_DISTANCE_PRESET_ID, SUBJECT_DISTANCE_PRESETS } from '../../lib/subjectDistance';
+import { DEFAULT_SUBJECT_DISTANCE_PRESET_ID } from '../../lib/subjectDistance';
 import type { ViewEntry } from '../../lib/types';
 import { useCatalog } from '../../store/CatalogProvider';
 import { useCompare, nextSystemId } from '../../store/CompareProvider';
 import { useKit } from '../../store/KitProvider';
 import { PhotoOpticsPanel } from '../gallery/PhotoOpticsPanel';
+import {
+  metadataRowFromPhoto,
+  normalizedFormatId,
+  photoMetadataChanged,
+  photoMetadataUpdatePayload,
+  type PhotoMetadataCatalog,
+  type PhotoMetadataRow,
+} from '../gallery/metadata/photoMetadataModel';
 import { EmbedCodeDialog } from '../embed/EmbedCodeDialog';
 import { PhotoLightbox } from '../lightbox/PhotoLightbox';
 import { Button } from '../ui/Button';
+
+const PhotoMetadataGrid = lazy(() => import('../gallery/metadata/PhotoMetadataGrid').then((module) => ({ default: module.PhotoMetadataGrid })));
 
 interface Props {
   mode: 'page' | 'settings';
@@ -102,19 +114,7 @@ interface AlbumPhotoView extends AdminGalleryPhoto {
 
 type AlbumMutation = GalleryAlbumMutation;
 
-interface PhotoDraft {
-  title: string;
-  camera: string;
-  lens: string;
-  formatId: string;
-  focal: string;
-  aperture: string;
-  subjectPreset: string;
-  shutterSpeed: string;
-  iso: string;
-  capturedAt: string;
-  notes: string;
-}
+type PhotoDraft = PhotoMetadataRow;
 
 const EMPTY_ALBUM: AlbumDraft = {
   slug: '',
@@ -517,9 +517,9 @@ export function AccountAlbumsManager({ mode, routeAlbumSlug }: Props) {
       albumPhotos={albumPhotos}
       selectedAlbumSlug={selectedAlbumSlug}
       selectedPhotoIds={selectedPhotoIds}
-      selectionAnchorId={selectionAnchorId}
       albumDraft={albumDraft}
       photoDrafts={photoDrafts}
+      catalog={{ cameras, lenses }}
       accessToken={accessToken}
       fileInputRef={fileInputRef}
       loading={loading}
@@ -651,9 +651,9 @@ function AlbumBuilder({
   albumPhotos,
   selectedAlbumSlug,
   selectedPhotoIds,
-  selectionAnchorId,
   albumDraft,
   photoDrafts,
+  catalog,
   accessToken,
   fileInputRef,
   loading,
@@ -679,9 +679,9 @@ function AlbumBuilder({
   albumPhotos: AlbumPhotoView[];
   selectedAlbumSlug: string;
   selectedPhotoIds: Set<string>;
-  selectionAnchorId: string | null;
   albumDraft: AlbumDraft;
   photoDrafts: Record<string, PhotoDraft>;
+  catalog: PhotoMetadataCatalog;
   accessToken: string | null;
   fileInputRef: RefObject<HTMLInputElement>;
   loading: boolean;
@@ -719,6 +719,33 @@ function AlbumBuilder({
   const optionsClass = bounded
     ? 'space-y-4 xl:h-full xl:overflow-y-auto xl:pr-1 xl:[scrollbar-gutter:stable]'
     : 'space-y-4';
+  const previewUrls = useAccountPhotoPreviewUrls(albumPhotos, accessToken);
+  const metadataRows = useMemo(
+    () => albumPhotos.map((photo) => ({
+      ...metadataRowFromPhoto(photo, {
+        ...(photoDrafts[photo.id] ?? {}),
+        id: photo.id,
+        previewSrc: previewUrls[photo.id] ?? (photo.src?.startsWith('/api/gallery/') ? photo.src : undefined),
+        previewLabel: photo.title,
+        albumVisibility: photo.visibility,
+        galleryStatus: photo.galleryStatus,
+      }),
+    })),
+    [albumPhotos, photoDrafts, previewUrls],
+  );
+  const setMetadataRows = (rows: PhotoMetadataRow[]) => {
+    setDrafts((current) => ({
+      ...current,
+      ...Object.fromEntries(rows.map((row) => [row.id, row])),
+    }));
+    setAlbumDraft((current) => ({
+      ...current,
+      photos: current.photos.map((item) => {
+        const row = rows.find((entry) => entry.id === item.photoId);
+        return row ? { ...item, visibility: row.albumVisibility ?? item.visibility } : item;
+      }),
+    }));
+  };
   const selectedPendingGalleryCount = albumPhotos.filter(
     (photo) => selectedPhotoIds.has(photo.id) && photo.galleryStatus === 'pending',
   ).length;
@@ -874,20 +901,23 @@ function AlbumBuilder({
             <div>
               <div className="text-sm font-bold">Photo details</div>
               <div className="label mt-1">
-                Edit metadata before submitting photos to the public gallery.
+                Edit metadata in bulk before saving the album or submitting photos to the public gallery.
               </div>
             </div>
-            <PhotoBulkTable
-              photos={albumPhotos}
-              drafts={photoDrafts}
-              selectedPhotoIds={selectedPhotoIds}
-              selectionAnchorId={selectionAnchorId}
-              setAlbumDraft={setAlbumDraft}
-              setDrafts={setDrafts}
-              setSelectedPhotoIds={setSelectedPhotoIds}
-              setSelectionAnchorId={setSelectionAnchorId}
-              accessToken={accessToken}
-            />
+            <Suspense fallback={<div className="border border-line bg-faint px-3 py-8 text-center text-xs text-muted">Loading metadata grid…</div>}>
+              <PhotoMetadataGrid
+                rows={metadataRows}
+                context="album"
+                catalog={catalog}
+                onRowsChange={setMetadataRows}
+                selectedRowIds={selectedPhotoIds}
+                onSelectedRowIdsChange={(ids) => {
+                  setSelectedPhotoIds(ids);
+                  setSelectionAnchorId(ids.values().next().value ?? null);
+                }}
+                readonlyColumns={['galleryStatus']}
+              />
+            </Suspense>
           </section>
         </main>
 
@@ -1858,124 +1888,6 @@ function AlbumDropZone({
   );
 }
 
-function PhotoBulkTable({
-  photos,
-  drafts,
-  selectedPhotoIds,
-  selectionAnchorId,
-  setAlbumDraft,
-  setDrafts,
-  setSelectedPhotoIds,
-  setSelectionAnchorId,
-  accessToken,
-}: {
-  photos: AlbumPhotoView[];
-  drafts: Record<string, PhotoDraft>;
-  selectedPhotoIds: Set<string>;
-  selectionAnchorId: string | null;
-  setAlbumDraft: Dispatch<SetStateAction<AlbumDraft>>;
-  setDrafts: Dispatch<SetStateAction<Record<string, PhotoDraft>>>;
-  setSelectedPhotoIds: Dispatch<SetStateAction<Set<string>>>;
-  setSelectionAnchorId: Dispatch<SetStateAction<string | null>>;
-  accessToken: string | null;
-}) {
-  const orderedIds = photos.map((photo) => photo.id);
-  return (
-    <div className="divide-y divide-line border border-line">
-      {photos.map((photo) => {
-        const draft = drafts[photo.id] ?? draftFromPhoto(photo);
-        return (
-          <div key={photo.id} className="grid gap-3 p-3 lg:grid-cols-[1.25rem_7rem_minmax(0,1fr)_auto] lg:items-start">
-            <SelectionPill
-              selected={selectedPhotoIds.has(photo.id)}
-              label={`Select ${photo.title}`}
-              onClick={(event) => {
-                const nextChecked = !selectedPhotoIds.has(photo.id);
-                const { next, anchor } = updatePhotoSelection(
-                  selectedPhotoIds,
-                  orderedIds,
-                  photo.id,
-                  nextChecked,
-                  event.shiftKey,
-                  selectionAnchorId,
-                );
-                setSelectedPhotoIds(next);
-                setSelectionAnchorId(anchor);
-              }}
-              className="mt-1"
-            />
-
-            <div className="flex gap-3 lg:block">
-              <AccountPhotoImage photo={photo} accessToken={accessToken} className="h-20 w-24 shrink-0 object-cover grayscale lg:h-20 lg:w-full" />
-              <div className="min-w-0 lg:mt-2">
-                <div className="label">
-                  {photo.visibility === 'visible' ? 'Visible in album' : 'Hidden from album'} · {galleryStatusLabel(photo.galleryStatus)}
-                </div>
-                <div className="mt-1 truncate text-xs font-bold lg:hidden">{photo.title}</div>
-              </div>
-            </div>
-
-            <div className="grid min-w-0 gap-2 md:grid-cols-6">
-              <DenseField className="md:col-span-2" label="Title" value={draft.title} onChange={(value) => updateDraft(photo.id, 'title', value, setDrafts)} />
-              <DenseField className="md:col-span-2" label="Camera" value={draft.camera} onChange={(value) => updateDraft(photo.id, 'camera', value, setDrafts)} />
-              <DenseField className="md:col-span-2" label="Lens" value={draft.lens} onChange={(value) => updateDraft(photo.id, 'lens', value, setDrafts)} />
-              <DenseSelect
-                className="md:col-span-2"
-                label="Format"
-                value={normalizedFormatId(draft.formatId)}
-                onChange={(value) => updateDraft(photo.id, 'formatId', value, setDrafts)}
-                options={GALLERY_FORMAT_OPTIONS.map((format) => ({ value: format.id, label: formatOptionLabel(format) }))}
-              />
-              <DenseField label="Focal length" value={draft.focal} onChange={(value) => updateDraft(photo.id, 'focal', value, setDrafts)} />
-              <DenseField label="Aperture" value={draft.aperture} onChange={(value) => updateDraft(photo.id, 'aperture', value, setDrafts)} />
-              <DenseSelect
-                className="md:col-span-2"
-                label="Framing"
-                value={draft.subjectPreset}
-                onChange={(value) => updateDraft(photo.id, 'subjectPreset', value, setDrafts)}
-                options={SUBJECT_DISTANCE_PRESETS.map((preset) => ({ value: preset.id, label: preset.label }))}
-              />
-            </div>
-
-            <div className="flex gap-1 lg:flex-col">
-              <Button
-                className="h-9 w-9 shrink-0 px-0 py-0"
-                title={photo.visibility === 'visible' ? 'Hide from public album' : 'Show in public album'}
-                onClick={() => setAlbumDraft((current) => ({
-                  ...current,
-                  photos: current.photos.map((item) => item.photoId === photo.id
-                    ? { ...item, visibility: item.visibility === 'visible' ? 'hidden' : 'visible' }
-                    : item),
-                }))}
-              >
-                {photo.visibility === 'visible' ? <Lock size={13} strokeWidth={1.5} /> : <Eye size={13} strokeWidth={1.5} />}
-                <span className="sr-only">{photo.visibility === 'visible' ? 'Hide from public album' : 'Show in public album'}</span>
-              </Button>
-              <Button
-                className="h-9 w-9 shrink-0 px-0 py-0"
-                title="Remove from album"
-                onClick={() => setAlbumDraft((current) => ({
-                  ...current,
-                  photos: current.photos.filter((item) => item.photoId !== photo.id),
-                  coverPhotoId: current.coverPhotoId === photo.id ? '' : current.coverPhotoId,
-                }))}
-              >
-                <X size={13} strokeWidth={1.5} />
-                <span className="sr-only">Remove from album</span>
-              </Button>
-            </div>
-          </div>
-        );
-      })}
-      {photos.length === 0 && (
-        <div className="px-3 py-8 text-center text-xs text-muted">
-          Add photos to this album to edit their visibility and gallery submission details.
-        </div>
-      )}
-    </div>
-  );
-}
-
 function AccountLightboxInfo({
   photo,
   busy,
@@ -2106,60 +2018,6 @@ function VisibilityChoiceButton({
   );
 }
 
-function DenseField({
-  label,
-  value,
-  onChange,
-  className = '',
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  className?: string;
-}) {
-  return (
-    <label className={`min-w-0 ${className}`} title={label}>
-      <span className="label mb-1 block">{label}</span>
-      <input
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="h-8 w-full min-w-0 border border-line bg-transparent px-2 text-xs outline-none focus:border-line-strong"
-      />
-    </label>
-  );
-}
-
-function DenseSelect({
-  label,
-  value,
-  options,
-  onChange,
-  className = '',
-}: {
-  label: string;
-  value: string;
-  options: Array<{ value: string; label: string }>;
-  onChange: (value: string) => void;
-  className?: string;
-}) {
-  return (
-    <label className={`min-w-0 ${className}`} title={label}>
-      <span className="label mb-1 block">{label}</span>
-      <select
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="h-8 w-full min-w-0 border border-line bg-transparent px-2 text-xs outline-none focus:border-line-strong"
-      >
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-}
-
 function SummaryRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="grid grid-cols-[minmax(0,1fr)_4rem] gap-3 px-3 py-2">
@@ -2219,50 +2077,15 @@ function albumPhotoView(
 }
 
 function draftFromPhoto(photo: AdminGalleryPhoto): PhotoDraft {
-  return {
-    title: photo.title,
-    camera: photo.camera,
-    lens: photo.lens,
-    formatId: normalizedFormatId(photo.formatId),
-    focal: String(photo.focal),
-    aperture: String(photo.aperture),
-    subjectPreset: photo.subjectPreset ?? DEFAULT_SUBJECT_DISTANCE_PRESET_ID,
-    shutterSpeed: photo.shutterSpeed ?? '',
-    iso: photo.iso != null ? String(photo.iso) : '',
-    capturedAt: photo.capturedAt ?? '',
-    notes: photo.notes ?? '',
-  };
+  return metadataRowFromPhoto(photo);
 }
 
 function photoUpdatePayload(photo: AdminGalleryPhoto, draft: PhotoDraft): Partial<AdminGalleryPhoto> & Record<string, unknown> {
-  return {
-    title: draft.title,
-    camera: draft.camera,
-    lens: draft.lens,
-    formatId: normalizedFormatId(draft.formatId),
-    focal: numberOrFallback(draft.focal, photo.focal),
-    aperture: numberOrFallback(draft.aperture, photo.aperture),
-    subjectPreset: draft.subjectPreset,
-    shutterSpeed: draft.shutterSpeed || null,
-    iso: draft.iso.trim() ? numberOrFallback(draft.iso, 0) : null,
-    capturedAt: draft.capturedAt || null,
-    notes: draft.notes,
-  };
+  return photoMetadataUpdatePayload(photo, draft);
 }
 
 function photoDraftChanged(photo: AdminGalleryPhoto, draft: PhotoDraft): boolean {
-  const next = photoUpdatePayload(photo, draft);
-  return next.title !== photo.title
-    || next.camera !== photo.camera
-    || next.lens !== photo.lens
-    || next.formatId !== normalizedFormatId(photo.formatId)
-    || next.focal !== photo.focal
-    || next.aperture !== photo.aperture
-    || next.subjectPreset !== (photo.subjectPreset ?? DEFAULT_SUBJECT_DISTANCE_PRESET_ID)
-    || next.shutterSpeed !== (photo.shutterSpeed ?? null)
-    || next.iso !== (photo.iso ?? null)
-    || next.capturedAt !== (photo.capturedAt ?? null)
-    || next.notes !== (photo.notes ?? '');
+  return photoMetadataChanged(photo, draft);
 }
 
 function viewEntryFromAccountPhoto(photo: AdminGalleryPhoto): ViewEntry {
@@ -2286,30 +2109,6 @@ function viewEntryFromAccountPhoto(photo: AdminGalleryPhoto): ViewEntry {
     guessed: fallbackUsed,
     morph: false,
   };
-}
-
-function updateDraft<K extends keyof PhotoDraft>(
-  id: string,
-  key: K,
-  value: PhotoDraft[K],
-  setDrafts: Dispatch<SetStateAction<Record<string, PhotoDraft>>>,
-) {
-  setDrafts((current) => ({
-    ...current,
-    [id]: {
-      ...(current[id] ?? ({} as PhotoDraft)),
-      [key]: value,
-    },
-  }));
-}
-
-function numberOrFallback(value: string, fallback: number): number {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : fallback;
-}
-
-function normalizedFormatId(value: string): string {
-  return resolveGalleryFormat(value).format.id;
 }
 
 function readAlbumPreferences(): AlbumDisplayPreferences {
@@ -2549,4 +2348,48 @@ function AccountPhotoImage({
   }
 
   return <img src={src} alt="" className={className} />;
+}
+
+function useAccountPhotoPreviewUrls(
+  photos: Array<Pick<AdminGalleryPhoto, 'id' | 'src'>>,
+  accessToken: string | null,
+): Record<string, string> {
+  const [urls, setUrls] = useState<Record<string, string>>({});
+  const key = photos.map((photo) => `${photo.id}:${photo.src}`).join('|');
+
+  useEffect(() => {
+    let cancelled = false;
+    const objectUrls: string[] = [];
+    setUrls({});
+
+    const load = async () => {
+      const entries = await Promise.all(photos.map(async (photo) => {
+        if (photo.src?.startsWith('/api/gallery/')) return [photo.id, photo.src] as const;
+        if (!accessToken) return null;
+        try {
+          const response = await fetch(`/api/account/gallery/photos/${encodeURIComponent(photo.id)}/image`, {
+            headers: { authorization: `Bearer ${accessToken}` },
+          });
+          if (!response.ok) throw new Error('preview failed');
+          const blob = await response.blob();
+          const objectUrl = URL.createObjectURL(blob);
+          objectUrls.push(objectUrl);
+          return [photo.id, objectUrl] as const;
+        } catch {
+          return null;
+        }
+      }));
+      if (!cancelled) setUrls(Object.fromEntries(entries.filter((entry): entry is readonly [string, string] => !!entry)));
+    };
+
+    void load();
+    return () => {
+      cancelled = true;
+      objectUrls.forEach((url) => URL.revokeObjectURL(url));
+    };
+    // `key` intentionally captures id/src changes without depending on the array identity.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accessToken, key]);
+
+  return urls;
 }
