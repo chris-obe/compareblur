@@ -4,6 +4,7 @@ import { COMPARE_LINE_COLORS, COMPARE_LINE_STYLES, compareLineColor, compareLine
 import { useCompare, type CompareSystem } from '../../store/CompareProvider';
 import { DashSwatch } from './BlurChart';
 import { NumberField } from '../ui/NumberField';
+import { Dropdown } from '../ui/Dropdown';
 
 const slotField =
   'h-8 w-16 border border-line bg-transparent px-1.5 text-xs outline-none focus:border-line-strong';
@@ -81,86 +82,68 @@ function SystemRow({
         </label>
       </div>
 
-      <div className="mt-2 space-y-1.5">
-        <ColorButtons
-          label="Colour"
-          value={color.id}
-          onChange={(lineColor) => onUpdate({ lineColor })}
-        />
-        <LineButtons
-          label="Line"
-          value={style.id}
-          onChange={(lineStyle) => onUpdate({ lineStyle })}
-        />
-      </div>
+      <StyleMenu
+        colorId={color.id}
+        styleId={style.id}
+        onChange={(lineColor, lineStyle) => onUpdate({ lineColor, lineStyle })}
+      />
     </div>
   );
 }
 
-function ColorButtons({
-  label,
-  value,
+function StyleMenu({
+  colorId,
+  styleId,
   onChange,
 }: {
-  label: string;
-  value: string;
-  onChange: (id: string) => void;
+  colorId: string;
+  styleId: string;
+  onChange: (lineColor: string, lineStyle: string) => void;
 }) {
-  return (
-    <div className="flex items-center gap-1.5">
-      <span className="label w-12 shrink-0">{label}</span>
-      <div className="flex min-w-0 flex-wrap gap-1">
-        {COMPARE_LINE_COLORS.map((option) => (
-          <button
-            key={option.id}
-            type="button"
-            onClick={() => onChange(option.id)}
-            title={option.label}
-            aria-label={`${label}: ${option.label}`}
-            aria-pressed={value === option.id}
-            className={[
-              'flex h-5 w-5 items-center justify-center border transition-colors hover:border-line-strong',
-              value === option.id ? 'border-fg' : 'border-line',
-            ].join(' ')}
-          >
-            <span className="h-2.5 w-2.5" style={{ background: option.stroke }} />
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
+  const color = compareLineColor(colorId);
+  const style = compareLineStyle(styleId);
 
-function LineButtons({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  onChange: (id: string) => void;
-}) {
   return (
-    <div className="flex items-center gap-1.5">
-      <span className="label w-12 shrink-0">{label}</span>
-      <div className="flex min-w-0 flex-wrap gap-1">
-        {COMPARE_LINE_STYLES.map((option) => (
-          <button
-            key={option.id}
-            type="button"
-            onClick={() => onChange(option.id)}
-            title={option.label}
-            aria-label={`${label}: ${option.label}`}
-            aria-pressed={value === option.id}
-            className={[
-              'flex h-5 w-8 items-center justify-center border transition-colors hover:border-line-strong',
-              value === option.id ? 'border-fg' : 'border-line',
-            ].join(' ')}
+    <div className="mt-2">
+      <Dropdown
+        align="left"
+        className="w-64 p-2"
+        trigger={
+          <div
+            className="flex h-8 w-14 items-center justify-center border border-line transition-colors hover:border-line-strong"
+            title={`${color.label} · ${style.label}`}
+            aria-label={`Style: ${color.label}, ${style.label}`}
+            style={{ background: color.stroke }}
           >
-            <DashSwatch color="var(--fg)" dash={option.dash} />
-          </button>
-        ))}
-      </div>
+            <DashSwatch color="var(--bg)" dash={style.dash} />
+          </div>
+        }
+      >
+        <div className="grid grid-cols-5 gap-1">
+          {COMPARE_LINE_COLORS.flatMap((colorOption) =>
+            COMPARE_LINE_STYLES.map((styleOption) => {
+              const selected = colorOption.id === colorId && styleOption.id === styleId;
+              return (
+                <button
+                  key={`${colorOption.id}-${styleOption.id}`}
+                  type="button"
+                  onClick={() => onChange(colorOption.id, styleOption.id)}
+                  title={`${colorOption.label} · ${styleOption.label}`}
+                  aria-label={`${colorOption.label} ${styleOption.label}`}
+                  aria-pressed={selected}
+                  className={[
+                    'flex h-8 items-center justify-center border transition-colors hover:border-line-strong',
+                    selected ? 'border-fg' : 'border-line',
+                  ].join(' ')}
+                  style={{ background: colorOption.stroke }}
+                >
+                  <DashSwatch color="var(--bg)" dash={styleOption.dash} />
+                </button>
+              );
+            }),
+          )}
+        </div>
+      </Dropdown>
     </div>
   );
 }
