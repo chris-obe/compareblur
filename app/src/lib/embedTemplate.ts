@@ -1,5 +1,19 @@
 import type { EmbedFieldId, EmbedGalleryModeTemplate, EmbedModeTemplate, EmbedTemplate } from './galleryApi';
 
+export const EMBED_FRAME_COLOR_OPTIONS = [
+  { id: 'black', label: 'Black', value: '#1f1a15' },
+  { id: 'white', label: 'White', value: '#f5f0e7' },
+  { id: 'mono', label: 'Mono', value: 'var(--fg)' },
+  { id: 'blue', label: 'Blue', value: 'color-mix(in oklch, var(--fg) 68%, #4f7cff 32%)' },
+  { id: 'green', label: 'Green', value: 'color-mix(in oklch, var(--fg) 68%, #20a36a 32%)' },
+  { id: 'amber', label: 'Amber', value: 'color-mix(in oklch, var(--fg) 68%, #c08318 32%)' },
+  { id: 'rose', label: 'Rose', value: 'color-mix(in oklch, var(--fg) 68%, #c95771 32%)' },
+  { id: 'violet', label: 'Violet', value: 'color-mix(in oklch, var(--fg) 68%, #8067d8 32%)' },
+  { id: 'teal', label: 'Teal', value: 'color-mix(in oklch, var(--fg) 68%, #1d9aa0 32%)' },
+] as const;
+
+export type EmbedFrameColorId = (typeof EMBED_FRAME_COLOR_OPTIONS)[number]['id'];
+
 export const EMBED_FIELD_OPTIONS: Array<{ id: EmbedFieldId; label: string }> = [
   { id: 'camera', label: 'Camera' },
   { id: 'lens', label: 'Lens' },
@@ -32,6 +46,9 @@ export const DEFAULT_EMBED_TEMPLATE: EmbedTemplate = {
   frameStyle: 'minimal',
   imageFit: 'contain',
   imagePosition: 'auto',
+  frameWidth: 10,
+  frameColor: 'black',
+  squareImages: false,
   maxLongEdge: DEFAULT_EMBED_MAX_LONG_EDGE,
   metadataPlacement: 'bottom',
   showMetadata: true,
@@ -52,6 +69,9 @@ export const DEFAULT_EMBED_TEMPLATE: EmbedTemplate = {
     frameStyle: 'minimal',
     imageFit: 'contain',
     imagePosition: 'auto',
+    frameWidth: 10,
+    frameColor: 'black',
+    squareImages: false,
     maxLongEdge: DEFAULT_EMBED_MAX_LONG_EDGE,
     metadataPlacement: 'bottom',
     showMetadata: true,
@@ -68,6 +88,9 @@ export const DEFAULT_EMBED_TEMPLATE: EmbedTemplate = {
     frameStyle: 'minimal',
     imageFit: 'cover',
     imagePosition: 'auto',
+    frameWidth: 10,
+    frameColor: 'black',
+    squareImages: false,
     maxLongEdge: DEFAULT_EMBED_MAX_LONG_EDGE,
     metadataPlacement: 'bottom',
     showMetadata: false,

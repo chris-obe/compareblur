@@ -2,6 +2,7 @@ import { ExternalLink } from 'lucide-react';
 import { computeMatch } from '../../lib/match';
 import { resolveGalleryFormat, formatDisplayName, GALLERY_FORMAT_OPTIONS } from '../../lib/galleryFormat';
 import { subjectPresetById } from '../../lib/subjectDistance';
+import { EMBED_FRAME_COLOR_OPTIONS } from '../../lib/embedTemplate';
 import type { EmbedFieldId, EmbedModeTemplate, GalleryAlbum } from '../../lib/galleryApi';
 import type { GalleryItem } from '../../lib/types';
 
@@ -77,8 +78,10 @@ export function EmbedPhotoFrame({
   const cardGrid = placement === 'bottom' ? 'grid-cols-2 sm:grid-cols-3' : 'grid-cols-1';
   const equivalentText = `${formatDisplayName(targetFormat)} equivalent ${round1(match.equivalent.target.focal)}mm · f/${round1(match.equivalent.target.aperture)}`;
   const openButton = template.showOpenButton && showAction ? (
-    <OpenButton href={linkHref} label={template.ctaLabel || 'Open in blur'} />
+    <OpenButton href={linkHref} label={template.ctaLabel || 'Open in blur'} theme={template.theme} />
   ) : null;
+  const frameWidth = effectiveFrameWidth(template);
+  const frameColor = frameColorValue(template.frameColor);
 
   const plaque = (
     <div className={plaqueClasses(template, placement)}>
@@ -119,11 +122,20 @@ export function EmbedPhotoFrame({
         {placement === 'left' && plaque}
 
         <div className="space-y-3">
-          <div className={['border bg-faint', frameClasses.image].join(' ')}>
+          <div
+            className={['border bg-faint', frameClasses.image].join(' ')}
+            style={{ padding: frameWidth, backgroundColor: frameColor }}
+          >
             <div
               className={[
-                'relative w-full overflow-hidden',
-                compact ? 'min-h-[16rem]' : preview ? 'min-h-[24rem]' : 'min-h-[32rem]',
+                'relative w-full overflow-hidden bg-bg',
+                template.squareImages
+                  ? 'aspect-square'
+                  : compact
+                    ? 'min-h-[16rem]'
+                    : preview
+                      ? 'min-h-[24rem]'
+                      : 'min-h-[32rem]',
               ].join(' ')}
             >
               {template.openButtonPlacement === 'top-right' && openButton && (
@@ -150,13 +162,27 @@ export function EmbedPhotoFrame({
   );
 }
 
-export function OpenButton({ href, label }: { href: string; label: string }) {
+export function OpenButton({
+  href,
+  label,
+  theme = 'light',
+}: {
+  href: string;
+  label: string;
+  theme?: EmbedModeTemplate['theme'];
+}) {
+  const contrast = openButtonContrast(theme);
   return (
     <a
       href={href}
       target="_blank"
       rel="noreferrer"
-      className="inline-flex items-center gap-2 self-start border border-line bg-bg/90 px-3 py-2 text-[11px] uppercase tracking-[0.18em] transition-colors hover:border-line-strong"
+      className="inline-flex items-center gap-2 self-start border px-3 py-2 text-[11px] uppercase tracking-[0.18em] transition-opacity hover:opacity-85"
+      style={{
+        backgroundColor: contrast.background,
+        borderColor: contrast.border,
+        color: contrast.text,
+      }}
     >
       {label}
       <ExternalLink size={13} strokeWidth={1.5} />
@@ -241,4 +267,21 @@ function imageObjectPosition(photo: GalleryItem, position: EmbedModeTemplate['im
     return 'center 38%';
   }
   return 'center center';
+}
+
+export function effectiveFrameWidth(template: Pick<EmbedModeTemplate, 'frameWidth' | 'maxLongEdge'>): number {
+  const requested = Number.isFinite(template.frameWidth) ? Math.max(0, Math.min(40, Math.round(template.frameWidth))) : 10;
+  const adaptiveMax = Math.max(4, Math.min(40, Math.round(safeLongEdge(template.maxLongEdge) / 64)));
+  return Math.min(requested, adaptiveMax);
+}
+
+export function frameColorValue(color: EmbedModeTemplate['frameColor']): string {
+  return EMBED_FRAME_COLOR_OPTIONS.find((option) => option.id === color)?.value ?? '#1f1a15';
+}
+
+function openButtonContrast(theme: EmbedModeTemplate['theme']): { background: string; border: string; text: string } {
+  if (theme === 'dark') {
+    return { background: '#f5f0e7', border: '#f5f0e7', text: '#1f1a15' };
+  }
+  return { background: '#1f1a15', border: '#1f1a15', text: '#f5f0e7' };
 }

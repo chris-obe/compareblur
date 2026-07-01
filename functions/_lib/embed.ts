@@ -9,6 +9,7 @@ export type EmbedImagePosition = 'auto' | 'center' | 'top' | 'bottom';
 export type EmbedMetadataPlacement = 'bottom' | 'left' | 'right';
 export type EmbedAlbumLayout = 'grid' | 'carousel';
 export type EmbedOpenButtonPlacement = 'metadata' | 'below' | 'top-right';
+export type EmbedFrameColor = 'black' | 'white' | 'mono' | 'blue' | 'green' | 'amber' | 'rose' | 'violet' | 'teal';
 
 export const EMBED_FIELD_IDS = [
   'camera',
@@ -30,6 +31,9 @@ export interface EmbedTemplate {
   frameStyle: EmbedFrameStyle;
   imageFit: EmbedImageFit;
   imagePosition: EmbedImagePosition;
+  frameWidth: number;
+  frameColor: EmbedFrameColor;
+  squareImages: boolean;
   maxLongEdge: number;
   metadataPlacement: EmbedMetadataPlacement;
   showMetadata: boolean;
@@ -57,6 +61,9 @@ export interface EmbedModeTemplate {
   frameStyle: EmbedFrameStyle;
   imageFit: EmbedImageFit;
   imagePosition: EmbedImagePosition;
+  frameWidth: number;
+  frameColor: EmbedFrameColor;
+  squareImages: boolean;
   maxLongEdge: number;
   metadataPlacement: EmbedMetadataPlacement;
   showMetadata: boolean;
@@ -118,6 +125,9 @@ export const DEFAULT_EMBED_TEMPLATE: EmbedTemplate = {
   frameStyle: 'minimal',
   imageFit: 'contain',
   imagePosition: 'auto',
+  frameWidth: 10,
+  frameColor: 'black',
+  squareImages: false,
   maxLongEdge: 960,
   metadataPlacement: 'bottom',
   showMetadata: true,
@@ -138,6 +148,9 @@ export const DEFAULT_EMBED_TEMPLATE: EmbedTemplate = {
     frameStyle: 'minimal',
     imageFit: 'contain',
     imagePosition: 'auto',
+    frameWidth: 10,
+    frameColor: 'black',
+    squareImages: false,
     maxLongEdge: 960,
     metadataPlacement: 'bottom',
     showMetadata: true,
@@ -154,6 +167,9 @@ export const DEFAULT_EMBED_TEMPLATE: EmbedTemplate = {
     frameStyle: 'minimal',
     imageFit: 'cover',
     imagePosition: 'auto',
+    frameWidth: 10,
+    frameColor: 'black',
+    squareImages: false,
     maxLongEdge: 960,
     metadataPlacement: 'bottom',
     showMetadata: false,
@@ -249,6 +265,9 @@ export function normalizeEmbedTemplate(input: unknown): EmbedTemplate {
     frameStyle: oneOf(value.frameStyle, ['minimal', 'technical', 'editorial'], DEFAULT_EMBED_TEMPLATE.frameStyle),
     imageFit: oneOf(value.imageFit, ['cover', 'contain'], DEFAULT_EMBED_TEMPLATE.imageFit),
     imagePosition: oneOf(value.imagePosition, ['auto', 'center', 'top', 'bottom'], DEFAULT_EMBED_TEMPLATE.imagePosition),
+    frameWidth: numberInRange(value.frameWidth, 0, 40, DEFAULT_EMBED_TEMPLATE.frameWidth),
+    frameColor: oneOf(value.frameColor, ['black', 'white', 'mono', 'blue', 'green', 'amber', 'rose', 'violet', 'teal'], DEFAULT_EMBED_TEMPLATE.frameColor),
+    squareImages: typeof value.squareImages === 'boolean' ? value.squareImages : DEFAULT_EMBED_TEMPLATE.squareImages,
     maxLongEdge: numberInRange(value.maxLongEdge, 320, 1600, DEFAULT_EMBED_TEMPLATE.maxLongEdge),
     metadataPlacement: oneOf(value.metadataPlacement, ['bottom', 'left', 'right'], DEFAULT_EMBED_TEMPLATE.metadataPlacement),
     showMetadata: typeof value.showMetadata === 'boolean' ? value.showMetadata : DEFAULT_EMBED_TEMPLATE.showMetadata,
@@ -292,6 +311,9 @@ function normalizeEmbedMode(input: unknown, fallback: EmbedModeTemplate): EmbedM
     frameStyle: oneOf(value.frameStyle, ['minimal', 'technical', 'editorial'], fallback.frameStyle),
     imageFit: oneOf(value.imageFit, ['cover', 'contain'], fallback.imageFit),
     imagePosition: oneOf(value.imagePosition, ['auto', 'center', 'top', 'bottom'], fallback.imagePosition),
+    frameWidth: numberInRange(value.frameWidth, 0, 40, fallback.frameWidth),
+    frameColor: oneOf(value.frameColor, ['black', 'white', 'mono', 'blue', 'green', 'amber', 'rose', 'violet', 'teal'], fallback.frameColor),
+    squareImages: typeof value.squareImages === 'boolean' ? value.squareImages : fallback.squareImages,
     maxLongEdge: numberInRange(value.maxLongEdge, 320, 1600, fallback.maxLongEdge),
     metadataPlacement: oneOf(value.metadataPlacement, ['bottom', 'left', 'right'], fallback.metadataPlacement),
     showMetadata: typeof value.showMetadata === 'boolean' ? value.showMetadata : fallback.showMetadata,

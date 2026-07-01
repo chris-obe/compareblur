@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import type { EmbedAlbumLayout, EmbedGalleryModeTemplate, GalleryAlbum } from '../../lib/galleryApi';
 import type { GalleryItem } from '../../lib/types';
-import { EmbedPhotoFrame, OpenButton, safeLongEdge, themeClasses } from './PhotoEmbedCard';
+import { EmbedPhotoFrame, OpenButton, effectiveFrameWidth, frameColorValue, safeLongEdge, themeClasses } from './PhotoEmbedCard';
 
 interface Props {
   photos: GalleryItem[];
@@ -21,7 +21,7 @@ export function EmbedGalleryCard({ photos, template, layout, columns, album, lin
   const cols = Math.max(2, Math.min(4, Math.round(columns)));
   const isCarousel = layout === 'carousel';
   const openButton = template.showOpenButton ? (
-    <OpenButton href={openHref} label={template.ctaLabel || 'Open in blur'} />
+    <OpenButton href={openHref} label={template.ctaLabel || 'Open in blur'} theme={template.theme} />
   ) : null;
 
   return (
@@ -112,6 +112,8 @@ function ContactSheetCell({
   const dimensions = photo as GalleryItem & { width?: number; height?: number };
   const ratio = dimensions.width && dimensions.height ? dimensions.width / dimensions.height : 1;
   const span = columns >= 3 && ratio > 1.35 ? 'sm:col-span-2' : '';
+  const frameWidth = effectiveFrameWidth(template);
+  const frameColor = frameColorValue(template.frameColor);
   const position = template.imagePosition === 'top'
     ? 'center top'
     : template.imagePosition === 'bottom'
@@ -123,16 +125,24 @@ function ContactSheetCell({
           : 'center center';
 
   return (
-    <a href={href} target="_blank" rel="noreferrer" className={['group block overflow-hidden border border-line bg-faint', span].join(' ')}>
-      <img
-        src={photo.src}
-        alt={photo.title}
-        className={[
-          'h-full min-h-40 w-full transition-transform duration-200 group-hover:scale-[1.015]',
-          template.imageFit === 'contain' ? 'object-contain p-2' : 'object-cover',
-        ].join(' ')}
-        style={{ objectPosition: position }}
-      />
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      className={['group block overflow-hidden border border-line bg-faint', template.squareImages ? 'aspect-square' : '', span].join(' ')}
+      style={{ padding: frameWidth, backgroundColor: frameColor }}
+    >
+      <div className={['h-full w-full overflow-hidden bg-bg', template.squareImages ? 'aspect-square' : 'min-h-40'].join(' ')}>
+        <img
+          src={photo.src}
+          alt={photo.title}
+          className={[
+            'h-full w-full transition-transform duration-200 group-hover:scale-[1.015]',
+            template.imageFit === 'contain' ? 'object-contain p-2' : 'object-cover',
+          ].join(' ')}
+          style={{ objectPosition: position }}
+        />
+      </div>
     </a>
   );
 }

@@ -14,6 +14,7 @@ import { adminTokenParams } from '../../auth/config';
 import {
   DEFAULT_EMBED_TEMPLATE,
   EMBED_FIELD_OPTIONS,
+  EMBED_FRAME_COLOR_OPTIONS,
   EMBED_METADATA_LIMIT,
   EMBED_SIZE_PRESETS,
   MAX_EMBED_LONG_EDGE,
@@ -442,6 +443,27 @@ export function BlogEmbedManager() {
                 onChange={(value) => updateModeTemplate('imagePosition', value as EmbedModeTemplate['imagePosition'])}
               />
 
+              <div className="space-y-3 border border-line p-3">
+                <div>
+                  <div className="label mb-1">Frame options</div>
+                  <div className="text-xs text-muted">The frame shrinks the image area and applies to square crops too.</div>
+                </div>
+                <ToggleRow
+                  label="Make images square"
+                  active={modeTemplate.squareImages}
+                  onToggle={() => updateModeTemplate('squareImages', !modeTemplate.squareImages)}
+                />
+                <FrameWidthField
+                  value={modeTemplate.frameWidth}
+                  maxLongEdge={modeTemplate.maxLongEdge}
+                  onChange={(value) => updateModeTemplate('frameWidth', value)}
+                />
+                <FrameColorField
+                  value={modeTemplate.frameColor}
+                  onChange={(value) => updateModeTemplate('frameColor', value)}
+                />
+              </div>
+
               <EmbedSizeField
                 value={modeTemplate.maxLongEdge}
                 onChange={(value) => updateModeTemplate('maxLongEdge', value)}
@@ -706,6 +728,72 @@ function EmbedSizeField({ value, onChange }: { value: number; onChange: (value: 
         Max long edge. Common blog/forum sizes are available as presets.
       </div>
     </label>
+  );
+}
+
+function FrameWidthField({
+  value,
+  maxLongEdge,
+  onChange,
+}: {
+  value: number;
+  maxLongEdge: number;
+  onChange: (value: number) => void;
+}) {
+  const adaptiveMax = Math.max(4, Math.min(40, Math.round(clampEmbedLongEdge(maxLongEdge) / 64)));
+  const normalized = clampInteger(value, 0, 40, 10);
+  return (
+    <label className="block">
+      <span className="label mb-2 block">Frame width</span>
+      <div className="grid grid-cols-[minmax(0,1fr)_3.5rem] items-center gap-3">
+        <input
+          type="range"
+          min={0}
+          max={40}
+          value={normalized}
+          onChange={(event) => onChange(clampInteger(event.target.value, 0, 40, 10))}
+          className="w-full accent-current"
+        />
+        <span className="border border-line px-2 py-1 text-center text-xs tabular-nums">{normalized}px</span>
+      </div>
+      <div className="mt-1 text-[10px] uppercase tracking-wide text-muted">
+        Rendered frame caps near {adaptiveMax}px at this embed size.
+      </div>
+    </label>
+  );
+}
+
+function FrameColorField({
+  value,
+  onChange,
+}: {
+  value: EmbedModeTemplate['frameColor'];
+  onChange: (value: EmbedModeTemplate['frameColor']) => void;
+}) {
+  return (
+    <div>
+      <span className="label mb-2 block">Frame colour</span>
+      <div className="grid grid-cols-3 gap-2">
+        {EMBED_FRAME_COLOR_OPTIONS.map((option) => (
+          <button
+            key={option.id}
+            type="button"
+            onClick={() => onChange(option.id)}
+            className={[
+              'flex items-center gap-2 border px-2 py-2 text-left text-[10px] uppercase tracking-wide',
+              value === option.id ? 'border-fg bg-fg text-bg' : 'border-line text-muted hover:border-line-strong hover:text-fg',
+            ].join(' ')}
+          >
+            <span
+              className="h-4 w-4 shrink-0 border border-line"
+              style={{ background: option.value }}
+              aria-hidden="true"
+            />
+            <span className="truncate">{option.label}</span>
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 

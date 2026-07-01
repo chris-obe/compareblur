@@ -28,6 +28,7 @@ export type EmbedImagePosition = 'auto' | 'center' | 'top' | 'bottom';
 export type EmbedMetadataPlacement = 'bottom' | 'left' | 'right';
 export type EmbedAlbumLayout = 'grid' | 'carousel';
 export type EmbedOpenButtonPlacement = 'metadata' | 'below' | 'top-right';
+export type EmbedFrameColor = 'black' | 'white' | 'mono' | 'blue' | 'green' | 'amber' | 'rose' | 'violet' | 'teal';
 
 export type EmbedFieldId =
   | 'camera'
@@ -46,6 +47,9 @@ export interface EmbedTemplate {
   frameStyle: EmbedFrameStyle;
   imageFit: EmbedImageFit;
   imagePosition: EmbedImagePosition;
+  frameWidth: number;
+  frameColor: EmbedFrameColor;
+  squareImages: boolean;
   maxLongEdge: number;
   metadataPlacement: EmbedMetadataPlacement;
   showMetadata: boolean;
@@ -70,6 +74,9 @@ export interface EmbedModeTemplate {
   frameStyle: EmbedFrameStyle;
   imageFit: EmbedImageFit;
   imagePosition: EmbedImagePosition;
+  frameWidth: number;
+  frameColor: EmbedFrameColor;
+  squareImages: boolean;
   maxLongEdge: number;
   metadataPlacement: EmbedMetadataPlacement;
   showMetadata: boolean;
