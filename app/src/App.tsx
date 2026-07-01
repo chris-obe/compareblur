@@ -11,6 +11,7 @@ import { Admin } from './pages/Admin';
 import { EmbedPhoto } from './pages/EmbedPhoto';
 import { EmbedGallery } from './pages/EmbedGallery';
 import { Albums } from './pages/Albums';
+import { FeatureFlagGate } from './store/FeatureFlagsProvider';
 
 export default function App() {
   return (
@@ -19,7 +20,9 @@ export default function App() {
         path="/"
         element={
           <AppShell title="Gallery">
-            <GalleryPage />
+            <FeatureFlagGate flag="gallery">
+              <GalleryPage />
+            </FeatureFlagGate>
           </AppShell>
         }
       />
@@ -27,7 +30,9 @@ export default function App() {
         path="/gallery/photo/:photoId"
         element={
           <AppShell title="Gallery">
-            <GalleryRoute />
+            <FeatureFlagGate flag="gallery">
+              <GalleryRoute />
+            </FeatureFlagGate>
           </AppShell>
         }
       />
@@ -35,7 +40,9 @@ export default function App() {
         path="/g/:albumSlug"
         element={
           <AppShell title="Gallery">
-            <AlbumGalleryRoute />
+            <FeatureFlagGate flag="gallery">
+              <AlbumGalleryRoute />
+            </FeatureFlagGate>
           </AppShell>
         }
       />
@@ -43,7 +50,9 @@ export default function App() {
         path="/g/:albumSlug/photo/:photoId"
         element={
           <AppShell title="Gallery">
-            <AlbumGalleryRoute />
+            <FeatureFlagGate flag="gallery">
+              <AlbumGalleryRoute />
+            </FeatureFlagGate>
           </AppShell>
         }
       />
@@ -54,7 +63,9 @@ export default function App() {
         path="/albums"
         element={
           <AppShell title="Albums">
-            <Albums />
+            <FeatureFlagGate flag="albums">
+              <Albums />
+            </FeatureFlagGate>
           </AppShell>
         }
       />
@@ -62,7 +73,9 @@ export default function App() {
         path="/albums/:albumSlug"
         element={
           <AppShell title="Albums">
-            <Albums />
+            <FeatureFlagGate flag="albums">
+              <Albums />
+            </FeatureFlagGate>
           </AppShell>
         }
       />
@@ -70,7 +83,9 @@ export default function App() {
         path="/compare"
         element={
           <AppShell title="Compare">
-            <Compare />
+            <FeatureFlagGate flag="compare">
+              <Compare />
+            </FeatureFlagGate>
           </AppShell>
         }
       />
@@ -78,7 +93,9 @@ export default function App() {
         path="/kit"
         element={
           <AppShell title="My Kit">
-            <MyKit />
+            <FeatureFlagGate flag="kit">
+              <MyKit />
+            </FeatureFlagGate>
           </AppShell>
         }
       />
@@ -86,7 +103,9 @@ export default function App() {
         path="/suggestions"
         element={
           <AppShell title="Suggestions">
-            <Suggestions />
+            <FeatureFlagGate flag="suggestions">
+              <Suggestions />
+            </FeatureFlagGate>
           </AppShell>
         }
       />
@@ -94,7 +113,9 @@ export default function App() {
         path="/settings"
         element={
           <AppShell title="Settings">
-            <Settings />
+            <FeatureFlagGate flag="settings">
+              <Settings />
+            </FeatureFlagGate>
           </AppShell>
         }
       />

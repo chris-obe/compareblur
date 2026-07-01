@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { useAdminAccess } from '../../auth/AdminAccessProvider';
+import { useFeatureFlags } from '../../store/FeatureFlagsProvider';
 import { BrandMark } from './BrandMark';
 import { ThemeToggle } from './ThemeToggle';
 import { PRIMARY_NAV, FOOTER_NAV, type NavItemData } from './navItems';
@@ -73,11 +74,15 @@ function SidebarCollapseControl({
 // Desktop navigation. Hidden on mobile, where BottomNav takes over.
 export function Sidebar() {
   const { isAdmin } = useAdminAccess();
+  const { isEnabled } = useFeatureFlags();
   const [collapsed, setCollapsed] = useState(() => {
     if (typeof window === 'undefined') return false;
     return window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === 'true';
   });
-  const footer = FOOTER_NAV.filter((item) => !item.adminOnly || isAdmin);
+  const primary = PRIMARY_NAV.filter((item) => !item.featureFlag || isEnabled(item.featureFlag));
+  const footer = FOOTER_NAV.filter(
+    (item) => (!item.adminOnly || isAdmin) && (!item.featureFlag || isEnabled(item.featureFlag)),
+  );
 
   useEffect(() => {
     window.localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(collapsed));
@@ -100,7 +105,7 @@ export function Sidebar() {
       </div>
 
       <nav className="flex flex-col py-2">
-        {PRIMARY_NAV.map((item) => (
+        {primary.map((item) => (
           <NavItem key={item.to} {...item} collapsed={collapsed} />
         ))}
       </nav>

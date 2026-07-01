@@ -50,10 +50,18 @@ import {
   type AdminGalleryPhoto,
   type GalleryTag,
 } from '../lib/galleryApi';
+import {
+  FEATURE_FLAG_DEFINITIONS,
+  getAdminFeatureFlags,
+  updateAdminFeatureFlags,
+  type FeatureFlagMap,
+  type FeatureFlagRecord,
+} from '../lib/featureFlags';
 import { useCatalog } from '../store/CatalogProvider';
+import { useFeatureFlags } from '../store/FeatureFlagsProvider';
 import { GalleryAdmin } from '../components/admin/GalleryAdmin';
 
-type AdminSection = 'overview' | 'catalog' | 'gallery' | 'reactions' | 'users' | 'storage';
+type AdminSection = 'overview' | 'catalog' | 'gallery' | 'reactions' | 'users' | 'flags' | 'storage';
 
 interface AdminGateProps {
   children: React.ReactNode;
@@ -65,6 +73,7 @@ const SECTIONS: Array<{ id: AdminSection; label: string }> = [
   { id: 'gallery', label: 'Gallery' },
   { id: 'reactions', label: 'Reactions' },
   { id: 'users', label: 'Users' },
+  { id: 'flags', label: 'Feature Flags' },
   { id: 'storage', label: 'Storage' },
 ];
 
@@ -165,6 +174,7 @@ export function Admin() {
 function AdminConsole() {
   const { getAccessTokenSilently, isAuthenticated, user } = useAuth0();
   const catalog = useCatalog();
+  const runtimeFeatureFlags = useFeatureFlags();
   const [section, setSection] = useState<AdminSection>('overview');
   const [adminIdentity, setAdminIdentity] = useState<AdminIdentity | null>(null);
   const [adminToken, setAdminToken] = useState<string | undefined>(undefined);
@@ -184,6 +194,10 @@ function AdminConsole() {
   const [usersLoading, setUsersLoading] = useState(false);
   const [usersQuery, setUsersQuery] = useState('');
   const [usersError, setUsersError] = useState<string | null>(null);
+  const [featureFlags, setFeatureFlags] = useState<FeatureFlagRecord[]>([]);
+  const [featureFlagsLoading, setFeatureFlagsLoading] = useState(false);
+  const [featureFlagsSaving, setFeatureFlagsSaving] = useState(false);
+  const [featureFlagsError, setFeatureFlagsError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -315,12 +329,45 @@ function AdminConsole() {
     }
   };
 
+  const loadFeatureFlags = async () => {
+    setFeatureFlagsLoading(true);
+    setFeatureFlagsError(null);
+    try {
+      const token = await getToken();
+      setFeatureFlags(await getAdminFeatureFlags(token));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Feature flags API failed';
+      setFeatureFlagsError(message);
+      setError(message);
+    } finally {
+      setFeatureFlagsLoading(false);
+    }
+  };
+
+  const saveFeatureFlags = async (updates: Partial<FeatureFlagMap>) => {
+    setFeatureFlagsSaving(true);
+    setFeatureFlagsError(null);
+    setError(null);
+    try {
+      const token = await getToken();
+      setFeatureFlags(await updateAdminFeatureFlags(updates, token));
+      await runtimeFeatureFlags.refresh();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Feature flags save failed';
+      setFeatureFlagsError(message);
+      setError(message);
+    } finally {
+      setFeatureFlagsSaving(false);
+    }
+  };
+
   useEffect(() => {
     void loadIdentity();
     void loadStatus();
     void loadGallery();
     void loadGalleryTags();
     void loadReactionStats();
+    void loadFeatureFlags();
     if (isAuthenticated) void loadUsers('');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated]);
@@ -364,6 +411,7 @@ function AdminConsole() {
       loadGallery(),
       loadGalleryTags(),
       loadReactionStats(),
+      loadFeatureFlags(),
       isAuthenticated ? loadUsers(usersQuery) : Promise.resolve(),
       cloudCatalogExport ? loadCloudCatalogExport() : Promise.resolve(),
     ]);
@@ -522,6 +570,16 @@ function AdminConsole() {
               error={usersError}
               onQueryChange={setUsersQuery}
               onReload={() => loadUsers(usersQuery)}
+            />
+          )}
+          {section === 'flags' && (
+            <FeatureFlagsSection
+              flags={featureFlags}
+              loading={featureFlagsLoading}
+              saving={featureFlagsSaving}
+              error={featureFlagsError}
+              onReload={loadFeatureFlags}
+              onSave={saveFeatureFlags}
             />
           )}
           {section === 'storage' && <StorageSection exportStatus={status?.export ?? null} />}
@@ -2589,6 +2647,131 @@ function UsersSection({
       </Panel>
     </div>
   );
+}
+
+function FeatureFlagsSection({
+  flags,
+  loading,
+  saving,
+  error,
+  onReload,
+  onSave,
+}: {
+  flags: FeatureFlagRecord[];
+  loading: boolean;
+  saving: boolean;
+  error: string | null;
+  onReload: () => Promise<void>;
+  onSave: (updates: Partial<FeatureFlagMap>) => Promise<void>;
+}) {
+  const [draft, setDraft] = useState<FeatureFlagMap>(() => flagsToDraft(flags));
+
+  useEffect(() => {
+    setDraft(flagsToDraft(flags));
+  }, [flags]);
+
+  const current = useMemo(() => flagsToDraft(flags), [flags]);
+  const changedKeys = FEATURE_FLAG_DEFINITIONS.filter((definition) => draft[definition.key] !== current[definition.key]).map(
+    (definition) => definition.key,
+  );
+
+  const save = async () => {
+    const updates = changedKeys.reduce((result, key) => {
+      result[key] = draft[key];
+      return result;
+    }, {} as Partial<FeatureFlagMap>);
+    await onSave(updates);
+  };
+
+  const byKey = new Map(flags.map((flag) => [flag.key, flag]));
+
+  return (
+    <Panel title="Feature flags" icon={SlidersHorizontal}>
+      <div className="space-y-4">
+        <div className="flex flex-col gap-3 border border-line p-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <div className="text-sm font-bold tracking-tight">Runtime screen availability</div>
+            <div className="mt-1 text-xs text-muted">Changes are stored in D1 and apply to users after reload.</div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={onReload} disabled={loading || saving}>
+              <RefreshCw size={14} strokeWidth={1.5} />
+              {loading ? 'Loading' : 'Reload'}
+            </Button>
+            <Button variant="solid" onClick={save} disabled={saving || changedKeys.length === 0}>
+              {saving ? 'Saving' : `Save${changedKeys.length ? ` ${changedKeys.length}` : ''}`}
+            </Button>
+          </div>
+        </div>
+
+        {error && (
+          <div className="border border-line bg-faint p-3 text-xs">
+            <span className="inline-flex items-center gap-2">
+              <AlertTriangle size={14} strokeWidth={1.5} />
+              {error}
+            </span>
+          </div>
+        )}
+
+        <div className="divide-y divide-line border border-line">
+          {FEATURE_FLAG_DEFINITIONS.map((definition) => {
+            const record = byKey.get(definition.key);
+            const enabled = draft[definition.key];
+            const changed = enabled !== current[definition.key];
+            return (
+              <div key={definition.key} className="grid gap-3 p-3 md:grid-cols-[minmax(0,1fr)_11rem] md:items-center">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-bold tracking-tight">{definition.label}</span>
+                    <span className={enabled ? 'border border-fg px-1.5 py-0.5 text-[10px] uppercase tracking-wide' : 'border border-line px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted'}>
+                      {enabled ? 'Enabled' : 'Disabled'}
+                    </span>
+                    {changed && <span className="border border-line bg-faint px-1.5 py-0.5 text-[10px] uppercase tracking-wide">Changed</span>}
+                  </div>
+                  <div className="mt-1 text-xs text-muted">{definition.routeSummary}</div>
+                  <div className="mt-1 text-[11px] text-muted">
+                    Updated {formatDate(record?.updatedAt)}{record?.updatedBy ? ` by ${record.updatedBy}` : ''}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 border border-line text-xs uppercase tracking-wide">
+                  <button
+                    type="button"
+                    onClick={() => setDraft((currentDraft) => ({ ...currentDraft, [definition.key]: true }))}
+                    className={[
+                      'px-3 py-2 transition-colors',
+                      enabled ? 'bg-fg text-bg' : 'text-muted hover:text-fg',
+                    ].join(' ')}
+                    aria-pressed={enabled}
+                  >
+                    On
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDraft((currentDraft) => ({ ...currentDraft, [definition.key]: false }))}
+                    className={[
+                      'border-l border-line px-3 py-2 transition-colors',
+                      !enabled ? 'bg-fg text-bg' : 'text-muted hover:text-fg',
+                    ].join(' ')}
+                    aria-pressed={!enabled}
+                  >
+                    Off
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </Panel>
+  );
+}
+
+function flagsToDraft(flags: FeatureFlagRecord[]): FeatureFlagMap {
+  return FEATURE_FLAG_DEFINITIONS.reduce((draft, definition) => {
+    draft[definition.key] = flags.find((flag) => flag.key === definition.key)?.enabled ?? true;
+    return draft;
+  }, {} as FeatureFlagMap);
 }
 
 function StorageSection({ exportStatus }: { exportStatus: CatalogAdminStatus['export'] }) {

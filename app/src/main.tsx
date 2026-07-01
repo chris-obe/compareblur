@@ -9,6 +9,7 @@ import { KitProvider } from './store/KitProvider';
 import { CompareProvider } from './store/CompareProvider';
 import { CatalogProvider } from './store/CatalogProvider';
 import { ReactionsProvider } from './store/ReactionsProvider';
+import { FeatureFlagsProvider } from './store/FeatureFlagsProvider';
 import './index.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
@@ -17,15 +18,17 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       <AppAuthProvider>
         <AdminAccessProvider>
           <ThemeProvider>
-            <CatalogProvider>
-              <KitProvider>
-                <CompareProvider>
-                  <ReactionsProvider>
-                    <App />
-                  </ReactionsProvider>
-                </CompareProvider>
-              </KitProvider>
-            </CatalogProvider>
+            <FeatureFlagsProvider>
+              <CatalogProvider>
+                <KitProvider>
+                  <CompareProvider>
+                    <ReactionsProvider>
+                      <App />
+                    </ReactionsProvider>
+                  </CompareProvider>
+                </KitProvider>
+              </CatalogProvider>
+            </FeatureFlagsProvider>
           </ThemeProvider>
         </AdminAccessProvider>
       </AppAuthProvider>

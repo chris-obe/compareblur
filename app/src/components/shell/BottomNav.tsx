@@ -1,11 +1,15 @@
 import { NavLink } from 'react-router-dom';
 import { useAdminAccess } from '../../auth/AdminAccessProvider';
+import { useFeatureFlags } from '../../store/FeatureFlagsProvider';
 import { PRIMARY_NAV, FOOTER_NAV } from './navItems';
 
 // Mobile app-style bottom tab bar. Hidden on desktop (Sidebar takes over).
 export function BottomNav() {
   const { isAdmin } = useAdminAccess();
-  const items = [...PRIMARY_NAV, ...FOOTER_NAV].filter((item) => !item.adminOnly || isAdmin);
+  const { isEnabled } = useFeatureFlags();
+  const items = [...PRIMARY_NAV, ...FOOTER_NAV].filter(
+    (item) => (!item.adminOnly || isAdmin) && (!item.featureFlag || isEnabled(item.featureFlag)),
+  );
 
   return (
     <nav className="flex shrink-0 border-t border-line bg-bg pb-[env(safe-area-inset-bottom)] lg:hidden">

@@ -167,6 +167,34 @@ function galleryApiProxy(): Plugin {
   };
 }
 
+function featureFlagsApiProxy(): Plugin {
+  return {
+    name: 'feature-flags-api-proxy',
+    configureServer(server: ViteDevServer) {
+      server.middlewares.use('/api/feature-flags', (req: IncomingMessage, res: ServerResponse) => {
+        proxyRequest(req, res, adminPagesOrigin, `/api/feature-flags${req.url ?? ''}`);
+      });
+
+      server.middlewares.use('/api/admin/feature-flags', (req: IncomingMessage, res: ServerResponse) => {
+        if (localAdminAuthRequired()) {
+          proxyRequest(req, res, adminPagesOrigin, `/api/admin/feature-flags${req.url ?? ''}`);
+          return;
+        }
+
+        const token = localAdminApiToken();
+        if (!token) {
+          res.statusCode = 500;
+          res.setHeader('content-type', 'application/json');
+          res.end(JSON.stringify({ error: 'ADMIN_API_TOKEN is not configured for local feature flag admin calls' }));
+          return;
+        }
+
+        proxyRequest(req, res, adminPagesOrigin, `/api/admin/feature-flags${req.url ?? ''}`, token);
+      });
+    },
+  };
+}
+
 function accountApiProxy(): Plugin {
   return {
     name: 'account-api-proxy',
@@ -225,7 +253,15 @@ function proxyRequest(
 // The optics engine lives in the sibling /engine directory and is shared
 // (the legacy site + demos import it too), so we alias instead of copying.
 export default defineConfig({
-  plugins: [react(), tailwindcss(), adminIdentityProxy(), catalogAdminProxy(), galleryApiProxy(), accountApiProxy()],
+  plugins: [
+    react(),
+    tailwindcss(),
+    adminIdentityProxy(),
+    catalogAdminProxy(),
+    galleryApiProxy(),
+    featureFlagsApiProxy(),
+    accountApiProxy(),
+  ],
   resolve: {
     alias: {
       '@engine': resolve(__dirname, '../engine/index.js'),
