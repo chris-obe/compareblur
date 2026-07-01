@@ -1,5 +1,5 @@
-import { Stub } from './Stub';
+import { SuggestionsPage } from '../components/suggestions/SuggestionsPage';
 
 export function Suggestions() {
-  return <Stub name="Suggestions — minimal · prime · budget · zoom" />;
+  return <SuggestionsPage />;
 }

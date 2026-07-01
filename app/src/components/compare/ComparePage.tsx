@@ -3,6 +3,7 @@ import { BlurChart } from './BlurChart';
 import { SubjectControl } from './SubjectControl';
 import { AddSystem } from './AddSystem';
 import { SystemList } from './SystemList';
+import { CompareLookPanel } from './CompareLookPanel';
 
 export function ComparePage() {
   const { systems, subjectWidthM, setSubjectWidthM, focusOverrideM, setFocusOverrideM } = useCompare();
@@ -30,6 +31,8 @@ export function ComparePage() {
           focusM={focusOverrideM}
           onFocusChange={setFocusOverrideM}
         />
+
+        <CompareLookPanel systems={systems} subjectWidthM={subjectWidthM} focusOverrideM={focusOverrideM} />
 
         <div className="min-h-[60vh] lg:min-h-0 lg:flex-1">
           <BlurChart systems={systems} subjectWidthM={subjectWidthM} focusOverrideM={focusOverrideM} />

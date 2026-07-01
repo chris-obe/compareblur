@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useState, type ReactNode } from 'react';
 import type { Format } from '../lib/engine';
 import { DEFAULT_SUBJECT_DISTANCE_PRESET_ID, subjectPresetById } from '../lib/subjectDistance';
+import type { LookSource } from '../lib/lookMatching';
 
 // One line on the compare chart. `context` is the stable descriptor (camera,
 // format, source); focal/aperture are editable, so the display label is derived.
@@ -12,6 +13,7 @@ export interface CompareSystem {
   aperture: number;
   subjectPreset?: string;
   subjectWidthM?: number;
+  source?: LookSource;
 }
 
 export function systemLabel(s: CompareSystem): string {

@@ -42,6 +42,7 @@ export function LightboxInfo({ entry }: { entry: ViewEntry }) {
                 aperture,
                 subjectPreset: entry.subjectPreset,
                 subjectWidthM: entry.subjectWidthM,
+                source: entry.id === 'upload' ? { type: 'manual' } : { type: 'gallery', photoId: entry.id },
               });
               navigate('/compare');
             }}

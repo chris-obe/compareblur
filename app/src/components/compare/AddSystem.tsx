@@ -9,26 +9,14 @@ import {
   maxApertureAtFocal,
   type CatalogLens,
 } from '../../lib/gear';
+import { compareSourceFromKitCombo, kitComboCandidates, lensOptionLabel } from '../../lib/lookCandidates';
 import { useCatalog } from '../../store/CatalogProvider';
 import { useKit } from '../../store/KitProvider';
 import { useCompare, nextSystemId, type CompareSystem } from '../../store/CompareProvider';
 import { NumberField } from '../ui/NumberField';
 import { SearchSelect, type SelectOption } from '../ui/SearchSelect';
-import type { OwnedCamera, OwnedLens } from '../../lib/types';
 
 type AddMode = 'kit' | 'catalog' | 'manual';
-
-interface KitCombo {
-  id: string;
-  label: string;
-  formatId: string;
-  focalMin: number;
-  focalMax: number;
-  apMax: number;
-  apMin: number;
-  aperturePoints?: CatalogLens['aperturePoints'];
-  type: CatalogLens['type'];
-}
 
 const shortFmt = (format: Format) => format.name.replace(/\s*\(.*?\)\s*/g, '').trim();
 
@@ -116,7 +104,7 @@ function OptionPanel({
 
 function KitOption({ onAdd }: { onAdd: (system: CompareSystem) => void }) {
   const { cameras, lenses } = useKit();
-  const combos = useMemo(() => kitCombos(cameras, lenses), [cameras, lenses]);
+  const combos = useMemo(() => kitComboCandidates(cameras, lenses), [cameras, lenses]);
   const options = useMemo<SelectOption[]>(
     () => combos.map((combo) => ({ id: combo.id, label: combo.label, maker: 'Kit' })),
     [combos],
@@ -140,6 +128,7 @@ function KitOption({ onAdd }: { onAdd: (system: CompareSystem) => void }) {
       format: getFormat(combo.formatId),
       focal,
       aperture,
+      source: compareSourceFromKitCombo(combo),
     });
   };
 
@@ -201,6 +190,7 @@ function CatalogOption({ onAdd }: { onAdd: (system: CompareSystem) => void }) {
       format: cameraFormat(camera),
       focal,
       aperture,
+      source: { type: 'catalog', cameraId: camera.id, lensId: lens.id, mount: camera.mount },
     });
   };
 
@@ -245,6 +235,7 @@ function ManualOption({ onAdd }: { onAdd: (system: CompareSystem) => void }) {
       format,
       focal,
       aperture,
+      source: { type: 'manual' },
     });
   };
 
@@ -355,38 +346,4 @@ function FocalAperture({
       </LabeledControl>
     </div>
   );
-}
-
-function kitCombos(cameras: OwnedCamera[], lenses: OwnedLens[]): KitCombo[] {
-  const combos: KitCombo[] = [];
-
-  for (const lens of lenses) {
-    const compatibleBodies = cameras.filter(
-      (camera) => camera.mount === lens.mount && lens.coversFormatIds.includes(camera.formatId),
-    );
-    const bodies = compatibleBodies.length ? compatibleBodies : [null];
-
-    for (const body of bodies) {
-      const formatId = body?.formatId ?? lens.coversFormatIds[0] ?? 'ff';
-      const format = getFormat(formatId);
-      const bodyName = body ? body.name : shortFmt(format);
-      combos.push({
-        id: `${lens.id}|${body?.id ?? 'native'}`,
-        label: `${bodyName} · ${lens.name} · ${cropFactor(format).toFixed(1)}x`,
-        formatId,
-        focalMin: lens.focalMin,
-        focalMax: lens.focalMax,
-        apMax: lens.apMax,
-        apMin: lens.apMin,
-        aperturePoints: lens.aperturePoints,
-        type: lens.type,
-      });
-    }
-  }
-
-  return combos;
-}
-
-function lensOptionLabel(lens: CatalogLens): string {
-  return `${lens.name} · ${lens.focalMin === lens.focalMax ? `${lens.focalMin}mm` : `${lens.focalMin}-${lens.focalMax}mm`} · ${apertureRangeLabel(lens)}`;
 }
