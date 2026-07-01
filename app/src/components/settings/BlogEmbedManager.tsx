@@ -58,8 +58,11 @@ export function BlogEmbedManager() {
   const getToken = async () =>
     isAuthenticated ? getAccessTokenSilently({ authorizationParams: adminTokenParams }) : undefined;
 
-  const approvedPhotos = useMemo(() => photos.filter((photo) => photo.status === 'approved'), [photos]);
-  const publishedAlbums = useMemo(() => albums.filter((album) => album.status === 'published'), [albums]);
+  const approvedPhotos = useMemo(() => photos.filter((photo) => photo.galleryStatus === 'approved'), [photos]);
+  const publishedAlbums = useMemo(
+    () => albums.filter((album) => album.status === 'published' && !album.hasPassword),
+    [albums],
+  );
   const previewPhoto = approvedPhotos.find((photo) => photo.id === previewPhotoId) ?? approvedPhotos[0] ?? null;
   const previewAlbum = publishedAlbums.find((album) => album.slug === previewAlbumSlug) ?? null;
   const modeTemplate = templateForMode(template, mode);
@@ -69,11 +72,10 @@ export function BlogEmbedManager() {
   const previewAlbumPhotos = useMemo(() => {
     const source = previewAlbum?.photos.length
       ? previewAlbum.photos
-          .map((albumPhoto) => approvedPhotos.find((photo) => photo.id === albumPhoto.id) ?? albumPhoto)
-      : approvedPhotos;
+      : approvedPhotos.map((photo) => ({ ...photo, src: `/api/gallery/photos/${photo.id}/image` }));
     return source
       .slice(0, galleryTemplate.albumCount)
-      .map((photo) => ({ ...photo, src: `/api/gallery/photos/${photo.id}/image` }));
+      .map((photo) => ({ ...photo }));
   }, [approvedPhotos, galleryTemplate.albumCount, previewAlbum]);
   const embedUrl = previewPhoto ? photoEmbedUrl(previewPhoto.id, previewAlbum?.slug) : '';
   const galleryEmbedUrl = previewAlbum
@@ -102,8 +104,8 @@ export function BlogEmbedManager() {
         listAdminGalleryPhotos(token),
         listAdminGalleryAlbums(token),
       ]);
-      const approved = nextPhotos.filter((photo) => photo.status === 'approved');
-      const published = nextAlbums.filter((album) => album.status === 'published');
+      const approved = nextPhotos.filter((photo) => photo.galleryStatus === 'approved');
+      const published = nextAlbums.filter((album) => album.status === 'published' && !album.hasPassword);
       setTemplate(nextTemplate);
       setPhotos(nextPhotos);
       setAlbums(nextAlbums);

@@ -46,7 +46,7 @@ export function EmbedCodeDialog({ mode, template, onClose, photo, albumSlug, alb
     const snippetMode: EmbedMode = mode === 'photo' ? 'single' : layout;
     let url = '';
     if (mode === 'photo' && photo) url = photoEmbedUrl(photo.id, albumSlug);
-    else if (mode === 'selection') url = selectionEmbedUrl(photoIds, { layout });
+    else if (mode === 'selection') url = selectionEmbedUrl(photoIds, { layout, albumSlug });
     else if (mode === 'album' && albumSlug) url = albumEmbedUrl(albumSlug, { count, layout });
     const title = photo?.title ?? albumTitle ?? 'gallery';
     return {

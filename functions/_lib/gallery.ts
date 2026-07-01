@@ -3,6 +3,9 @@ export interface GalleryEnv {
   GALLERY_BUCKET: R2Bucket;
 }
 
+export type GalleryModerationStatus = 'not_submitted' | 'pending' | 'approved' | 'rejected';
+export type GalleryLegacyStatus = 'draft' | 'pending' | 'approved' | 'rejected';
+
 export interface GalleryReactionCounts {
   dislike: number;
   like: number;
@@ -15,6 +18,8 @@ export interface GalleryRow {
   title: string;
   author: string;
   status: string;
+  gallery_status?: string | null;
+  gallery_status_review_required?: number | null;
   object_key: string;
   content_type: string;
   width: number | null;
@@ -50,13 +55,21 @@ export function json(body: unknown, init: ResponseInit = {}) {
   });
 }
 
-export function photoFromRow(row: GalleryRow, admin = false, reactionCounts?: GalleryReactionCounts) {
-  const src = admin ? `/api/admin/gallery/${row.id}/image` : `/api/gallery/photos/${row.id}/image`;
+export function photoFromRow(
+  row: GalleryRow,
+  admin = false,
+  reactionCounts?: GalleryReactionCounts,
+  options: { src?: string } = {},
+) {
+  const galleryStatus = galleryStatusFromRow(row);
+  const src = options.src ?? (admin ? `/api/admin/gallery/${row.id}/image` : `/api/gallery/photos/${row.id}/image`);
   return {
     id: row.id,
     title: row.title,
     author: row.author,
-    status: row.status,
+    status: legacyStatusFromGalleryStatus(galleryStatus),
+    galleryStatus,
+    galleryStatusNeedsReview: admin ? (row.gallery_status_review_required ?? 0) > 0 : undefined,
     src,
     formatId: row.format_id,
     camera: row.camera,
@@ -113,16 +126,38 @@ export async function findPhoto(env: GalleryEnv, id: string): Promise<GalleryRow
   return env.GALLERY_DB.prepare('SELECT * FROM gallery_photos WHERE id = ?').bind(id).first<GalleryRow>();
 }
 
-export async function imageResponse(env: GalleryEnv, row: GalleryRow) {
+export async function imageResponse(
+  env: GalleryEnv,
+  row: GalleryRow,
+  options: { publicCache?: boolean } = {},
+) {
   const object = await env.GALLERY_BUCKET.get(row.object_key);
   if (!object) return json({ error: 'image not found' }, { status: 404 });
 
   const headers = new Headers();
   headers.set('content-type', row.content_type || object.httpMetadata?.contentType || 'application/octet-stream');
-  headers.set('cache-control', row.status === 'approved' ? 'public, max-age=300' : 'no-store');
+  headers.set('cache-control', options.publicCache || galleryStatusFromRow(row) === 'approved' ? 'public, max-age=300' : 'no-store');
   if (object.httpEtag) headers.set('etag', object.httpEtag);
 
   return new Response(object.body, { headers });
+}
+
+export function galleryStatusFromRow(row: Pick<GalleryRow, 'status' | 'gallery_status'>): GalleryModerationStatus {
+  const explicit = typeof row.gallery_status === 'string' ? row.gallery_status : '';
+  if (explicit === 'approved' || explicit === 'pending' || explicit === 'rejected' || explicit === 'not_submitted') {
+    return explicit;
+  }
+  return legacyStatusToGalleryStatus(row.status);
+}
+
+export function legacyStatusToGalleryStatus(value: string | null | undefined): GalleryModerationStatus {
+  if (value === 'approved' || value === 'pending' || value === 'rejected') return value;
+  return 'not_submitted';
+}
+
+export function legacyStatusFromGalleryStatus(value: GalleryModerationStatus): GalleryLegacyStatus {
+  if (value === 'approved' || value === 'pending' || value === 'rejected') return value;
+  return 'draft';
 }
 
 export function cleanId(value: string) {

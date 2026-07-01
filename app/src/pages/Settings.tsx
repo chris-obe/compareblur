@@ -272,6 +272,7 @@ function ProfileSection() {
             ['Total', String(account?.stats.uploads.total ?? 0)],
             ['Approved', String(account?.stats.uploads.approved ?? 0)],
             ['Pending', String(account?.stats.uploads.pending ?? 0)],
+            ['Library only', String(account?.stats.uploads.draft ?? 0)],
             ['Admin-owned', String(account?.stats.uploads.adminOwnedUnattributed ?? 0)],
           ]}
           rows={(account?.uploads ?? []).map((item) => [

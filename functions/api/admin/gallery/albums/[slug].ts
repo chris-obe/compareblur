@@ -4,7 +4,6 @@ import {
   cleanAlbumSlug,
   normalizeAlbumStatus,
   normalizePhotoInputs,
-  publishAlbumPhotos,
   replaceAlbumPhotos,
   type GalleryAlbumRow,
 } from '../../../../_lib/embed';
@@ -64,9 +63,6 @@ export const onRequestPatch: PagesFunction<Env> = async ({ env, params, request 
     if (body.photos != null || body.photoIds != null) {
       await replaceAlbumPhotos(env, nextSlug, normalizePhotoInputs(body.photos ?? body.photoIds));
     }
-  }
-  if (status === 'published') {
-    await publishAlbumPhotos(env, nextSlug);
   }
 
   const row = await env.GALLERY_DB.prepare('SELECT * FROM gallery_albums WHERE slug = ?').bind(nextSlug).first<GalleryAlbumRow>();

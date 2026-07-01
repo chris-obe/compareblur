@@ -47,6 +47,8 @@ import {
   updateAccountGalleryPhoto,
   uploadAccountGalleryPhoto,
   type AdminGalleryPhoto,
+  type GalleryAlbumMutation,
+  type GalleryAlbumPhotoVisibility,
   type EmbedTemplate,
   type GalleryAlbum,
   type GalleryAlbumStatus,
@@ -74,6 +76,12 @@ interface Props {
   routeAlbumSlug?: string;
 }
 
+interface AlbumDraftPhoto {
+  photoId: string;
+  visibility: GalleryAlbumPhotoVisibility;
+  caption?: string | null;
+}
+
 interface AlbumDraft {
   slug: string;
   title: string;
@@ -82,8 +90,17 @@ interface AlbumDraft {
   hasPassword: boolean;
   albumPassword: string;
   coverPhotoId: string;
-  photoIds: string[];
+  photos: AlbumDraftPhoto[];
 }
+
+interface AlbumPhotoView extends AdminGalleryPhoto {
+  photoId: string;
+  visibility: GalleryAlbumPhotoVisibility;
+  caption?: string;
+  sortOrder: number;
+}
+
+type AlbumMutation = GalleryAlbumMutation;
 
 interface PhotoDraft {
   title: string;
@@ -107,7 +124,7 @@ const EMPTY_ALBUM: AlbumDraft = {
   hasPassword: false,
   albumPassword: '',
   coverPhotoId: '',
-  photoIds: [],
+  photos: [],
 };
 
 type AlbumSubtitleField = 'updated' | 'created' | 'published' | 'photo-count' | 'status' | 'description';
@@ -121,7 +138,7 @@ interface AlbumDisplayPreferences {
 
 type EmbedRequest =
   | { mode: 'photo'; photo: { id: string; title: string }; albumSlug?: string }
-  | { mode: 'selection'; photoIds: string[] }
+  | { mode: 'selection'; photoIds: string[]; albumSlug?: string; albumTitle?: string }
   | { mode: 'album'; albumSlug: string; albumTitle: string };
 
 const ALBUM_PREFS_KEY = 'blur.albumDisplayPreferences';
@@ -163,14 +180,17 @@ export function AccountAlbumsManager({ mode, routeAlbumSlug }: Props) {
   const modeParam = searchParams.get('mode');
   const detailMode: AlbumDefaultMode = modeParam === 'edit' || (!modeParam && preferences.defaultAlbumMode === 'edit') || isNewRoute ? 'edit' : 'view';
   const albumPhotos = useMemo(
-    () => albumDraft.photoIds
-      .map((id) => photos.find((photo) => photo.id === id))
-      .filter((photo): photo is AdminGalleryPhoto => !!photo),
-    [albumDraft.photoIds, photos],
+    () => albumDraft.photos
+      .map((item, index) => {
+        const photo = photos.find((entry) => entry.id === item.photoId);
+        return photo ? albumPhotoView(photo, item, index) : null;
+      })
+      .filter((photo): photo is AlbumPhotoView => photo != null),
+    [albumDraft.photos, photos],
   );
   const availablePhotos = useMemo(
-    () => photos.filter((photo) => !albumDraft.photoIds.includes(photo.id)),
-    [albumDraft.photoIds, photos],
+    () => photos.filter((photo) => !albumDraft.photos.some((item) => item.photoId === photo.id)),
+    [albumDraft.photos, photos],
   );
   const lightboxPhotos = useMemo(() => {
     if (selectedAlbum) {
@@ -183,7 +203,7 @@ export function AccountAlbumsManager({ mode, routeAlbumSlug }: Props) {
   const lightboxIndex = viewPhotoId ? lightboxPhotos.findIndex((photo) => photo.id === viewPhotoId) : -1;
   const selectedApprovedPhotoIds = useMemo(
     () => photos
-      .filter((photo) => selectedPhotoIds.has(photo.id) && photo.status === 'approved')
+      .filter((photo) => selectedPhotoIds.has(photo.id) && photo.galleryStatus === 'approved')
       .map((photo) => photo.id),
     [photos, selectedPhotoIds],
   );
@@ -420,7 +440,7 @@ export function AccountAlbumsManager({ mode, routeAlbumSlug }: Props) {
 
   const patchAlbum = async (
     slug: string,
-    updates: Partial<GalleryAlbum> & { photoIds?: string[]; albumPassword?: string | null },
+    updates: AlbumMutation,
   ) => {
     const token = await getToken();
     setAccessToken(token);
@@ -433,7 +453,7 @@ export function AccountAlbumsManager({ mode, routeAlbumSlug }: Props) {
     return updated;
   };
 
-  const publishSelected = async () => {
+  const submitSelectedToGallery = async () => {
     setBusy(true);
     setError(null);
     try {
@@ -449,7 +469,7 @@ export function AccountAlbumsManager({ mode, routeAlbumSlug }: Props) {
     }
   };
 
-  const unpublishSelected = async () => {
+  const withdrawSelectedFromGallery = async () => {
     setBusy(true);
     setError(null);
     try {
@@ -480,9 +500,15 @@ export function AccountAlbumsManager({ mode, routeAlbumSlug }: Props) {
     }
   };
 
-  const openSelectionEmbed = () => {
-    if (selectedApprovedPhotoIds.length === 0) return;
-    setEmbedRequest({ mode: 'selection', photoIds: selectedApprovedPhotoIds });
+  const openSelectionEmbed = (options: { photoIds?: string[]; albumSlug?: string; albumTitle?: string } = {}) => {
+    const photoIds = options.photoIds ?? selectedApprovedPhotoIds;
+    if (photoIds.length === 0) return;
+    setEmbedRequest({
+      mode: 'selection',
+      photoIds,
+      albumSlug: options.albumSlug,
+      albumTitle: options.albumTitle,
+    });
   };
 
   const openAlbumEmbed = (album: GalleryAlbum) => {
@@ -526,7 +552,8 @@ export function AccountAlbumsManager({ mode, routeAlbumSlug }: Props) {
       uploadFiles={uploadFiles}
       saveAlbum={saveAlbum}
       savePhoto={savePhoto}
-      publishSelected={publishSelected}
+      submitSelectedToGallery={submitSelectedToGallery}
+      withdrawSelectedFromGallery={withdrawSelectedFromGallery}
       reload={load}
     />
   );
@@ -556,7 +583,7 @@ export function AccountAlbumsManager({ mode, routeAlbumSlug }: Props) {
             preferences={preferences}
             selectedPhotoIds={selectedPhotoIds}
             selectionAnchorId={selectionAnchorId}
-            selectedApprovedCount={selectedApprovedPhotoIds.length}
+            selectedGalleryApprovedCount={selectedApprovedPhotoIds.length}
             accessToken={accessToken}
             busy={busy}
             embedReady={embedReady}
@@ -570,8 +597,8 @@ export function AccountAlbumsManager({ mode, routeAlbumSlug }: Props) {
             setSelectedPhotoIds={setSelectedPhotoIds}
             setSelectionAnchorId={setSelectionAnchorId}
             setViewPhotoId={setViewPhotoId}
-            publishSelected={publishSelected}
-            unpublishSelected={unpublishSelected}
+            submitSelectedToGallery={submitSelectedToGallery}
+            withdrawSelectedFromGallery={withdrawSelectedFromGallery}
             patchAlbum={patchAlbum}
             onEmbedSelected={openSelectionEmbed}
             onEmbedAlbum={openAlbumEmbed}
@@ -601,6 +628,7 @@ export function AccountAlbumsManager({ mode, routeAlbumSlug }: Props) {
             <AccountLightboxInfo
               photo={photo}
               busy={busy}
+              canEmbed={selectedAlbum ? selectedAlbum.status === 'published' && !selectedAlbum.hasPassword : photo.galleryStatus === 'approved'}
               onEdit={() => {
                 setViewPhotoId(null);
                 if (selectedAlbum) navigate(`/albums/${encodeURIComponent(selectedAlbum.slug)}?mode=edit`);
@@ -659,14 +687,15 @@ function AlbumBuilder({
   uploadFiles,
   saveAlbum,
   savePhoto,
-  publishSelected,
+  submitSelectedToGallery,
+  withdrawSelectedFromGallery,
   reload,
 }: {
   bounded: boolean;
   albums: GalleryAlbum[];
   photos: AdminGalleryPhoto[];
   availablePhotos: AdminGalleryPhoto[];
-  albumPhotos: AdminGalleryPhoto[];
+  albumPhotos: AlbumPhotoView[];
   selectedAlbumSlug: string;
   selectedPhotoIds: Set<string>;
   selectionAnchorId: string | null;
@@ -687,7 +716,8 @@ function AlbumBuilder({
   uploadFiles: (files: FileList | File[] | null) => Promise<void>;
   saveAlbum: () => Promise<void>;
   savePhoto: (photo: AdminGalleryPhoto) => Promise<void>;
-  publishSelected: () => Promise<void>;
+  submitSelectedToGallery: () => Promise<void>;
+  withdrawSelectedFromGallery: () => Promise<void>;
   reload: () => Promise<{ photos: AdminGalleryPhoto[]; albums: GalleryAlbum[] } | null>;
 }) {
   const [existingPhotoId, setExistingPhotoId] = useState('');
@@ -709,6 +739,9 @@ function AlbumBuilder({
   const optionsClass = bounded
     ? 'space-y-4 xl:h-full xl:overflow-y-auto xl:pr-1 xl:[scrollbar-gutter:stable]'
     : 'space-y-4';
+  const selectedPendingGalleryCount = albumPhotos.filter(
+    (photo) => selectedPhotoIds.has(photo.id) && photo.galleryStatus === 'pending',
+  ).length;
 
   const addExistingPhoto = () => {
     if (!existingPhotoId) return;
@@ -833,7 +866,7 @@ function AlbumBuilder({
                       type="button"
                       onClick={() => setAlbumDraft((current) => ({
                         ...current,
-                        photoIds: current.photoIds.filter((id) => id !== photo.id),
+                        photos: current.photos.filter((item) => item.photoId !== photo.id),
                         coverPhotoId: current.coverPhotoId === photo.id ? '' : current.coverPhotoId,
                       }))}
                       className="absolute right-1 top-1 flex h-7 w-7 items-center justify-center border border-line bg-surface/90 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100"
@@ -844,6 +877,11 @@ function AlbumBuilder({
                     {albumDraft.coverPhotoId === photo.id && (
                       <div className="absolute bottom-1 left-1 border border-line bg-surface/90 px-1.5 py-1 text-[10px] uppercase tracking-wide">
                         Cover
+                      </div>
+                    )}
+                    {photo.visibility === 'hidden' && (
+                      <div className="absolute bottom-1 right-1 border border-line bg-surface/90 px-1.5 py-1 text-[10px] uppercase tracking-wide">
+                        Hidden
                       </div>
                     )}
                   </div>
@@ -977,9 +1015,13 @@ function AlbumBuilder({
                 <RefreshCw size={14} strokeWidth={1.5} />
                 Reload
               </Button>
-              <Button className="w-full" onClick={() => void publishSelected()} disabled={busy || selectedPhotoIds.size === 0}>
+              <Button className="w-full" onClick={() => void submitSelectedToGallery()} disabled={busy || selectedPhotoIds.size === 0}>
                 <Send size={14} strokeWidth={1.5} />
-                Submit selected
+                Submit selected to gallery
+              </Button>
+              <Button className="w-full" onClick={() => void withdrawSelectedFromGallery()} disabled={busy || selectedPendingGalleryCount === 0}>
+                <Lock size={14} strokeWidth={1.5} />
+                Withdraw pending
               </Button>
             </div>
             <dl className="mt-4 divide-y divide-line border border-line text-xs">
@@ -1004,7 +1046,7 @@ function AlbumViewer({
   preferences,
   selectedPhotoIds,
   selectionAnchorId,
-  selectedApprovedCount,
+  selectedGalleryApprovedCount,
   accessToken,
   busy,
   embedReady,
@@ -1018,8 +1060,8 @@ function AlbumViewer({
   setSelectedPhotoIds,
   setSelectionAnchorId,
   setViewPhotoId,
-  publishSelected,
-  unpublishSelected,
+  submitSelectedToGallery,
+  withdrawSelectedFromGallery,
   patchAlbum,
   onEmbedSelected,
   onEmbedAlbum,
@@ -1035,7 +1077,7 @@ function AlbumViewer({
   preferences: AlbumDisplayPreferences;
   selectedPhotoIds: Set<string>;
   selectionAnchorId: string | null;
-  selectedApprovedCount: number;
+  selectedGalleryApprovedCount: number;
   accessToken: string | null;
   busy: boolean;
   embedReady: boolean;
@@ -1049,23 +1091,36 @@ function AlbumViewer({
   setSelectedPhotoIds: Dispatch<SetStateAction<Set<string>>>;
   setSelectionAnchorId: Dispatch<SetStateAction<string | null>>;
   setViewPhotoId: Dispatch<SetStateAction<string | null>>;
-  publishSelected: () => Promise<void>;
-  unpublishSelected: () => Promise<void>;
-  patchAlbum: (slug: string, updates: Partial<GalleryAlbum> & { photoIds?: string[]; albumPassword?: string | null }) => Promise<GalleryAlbum>;
-  onEmbedSelected: () => void;
+  submitSelectedToGallery: () => Promise<void>;
+  withdrawSelectedFromGallery: () => Promise<void>;
+  patchAlbum: (slug: string, updates: AlbumMutation) => Promise<GalleryAlbum>;
+  onEmbedSelected: (options?: { photoIds?: string[]; albumSlug?: string; albumTitle?: string }) => void;
   onEmbedAlbum: (album: GalleryAlbum) => void;
   goToAlbums: () => void;
   openAlbum: (album: GalleryAlbum) => void;
 }) {
   const selectedAlbumPhotos = selectedAlbum
     ? selectedAlbum.photos
-        .map((item) => photos.find((photo) => photo.id === item.id))
-        .filter((photo): photo is AdminGalleryPhoto => !!photo)
+        .map((item, index) => {
+          const photo = photos.find((entry) => entry.id === item.id);
+          return photo ? albumPhotoView(photo, item, item.sortOrder ?? index) : null;
+        })
+        .filter((photo): photo is AlbumPhotoView => photo != null)
     : [];
   const visiblePhotoIds = selectedAlbum ? selectedAlbumPhotos.map((photo) => photo.id) : pageSurface === 'all' ? photos.map((photo) => photo.id) : [];
   const allVisibleSelected = visiblePhotoIds.length > 0 && visiblePhotoIds.every((id) => selectedPhotoIds.has(id));
-  const selectedPhotos = photos.filter((photo) => selectedPhotoIds.has(photo.id));
-  const selectedPublishedCount = selectedPhotos.filter((photo) => photo.status === 'approved').length;
+  const selectedAlbumScopedPhotos = selectedAlbumPhotos.filter((photo) => selectedPhotoIds.has(photo.id));
+  const selectedLibraryPhotos = photos.filter((photo) => selectedPhotoIds.has(photo.id));
+  const selectedPhotos = selectedAlbum ? selectedAlbumScopedPhotos : selectedLibraryPhotos;
+  const selectedVisibleAlbumCount = selectedAlbum
+    ? selectedAlbumScopedPhotos.filter((photo) => photo.visibility === 'visible').length
+    : 0;
+  const selectedPendingGalleryCount = selectedPhotos.filter((photo) => photo.galleryStatus === 'pending').length;
+  const selectedEmbeddableCount = selectedAlbum
+    ? selectedAlbum.status === 'published' && !selectedAlbum.hasPassword
+      ? selectedAlbumScopedPhotos.filter((photo) => photo.visibility === 'visible').length
+      : 0
+    : selectedGalleryApprovedCount;
 
   const setAllVisible = (checked: boolean) => {
     setSelectedPhotoIds(checked ? new Set(visiblePhotoIds) : new Set());
@@ -1090,6 +1145,19 @@ function AlbumViewer({
     if (!selectedAlbum || busy) return;
     await patchAlbum(selectedAlbum.slug, { status });
     await reload();
+  };
+
+  const updateSelectedAlbumPhotoVisibility = async (visibility: GalleryAlbumPhotoVisibility) => {
+    if (!selectedAlbum || busy || selectedPhotos.length === 0) return;
+    await patchAlbum(selectedAlbum.slug, {
+      photos: selectedAlbum.photos.map((photo) => ({
+        photoId: photo.photoId,
+        caption: photo.caption ?? null,
+        visibility: selectedPhotoIds.has(photo.id) ? visibility : photo.visibility,
+      })),
+    });
+    setSelectedPhotoIds(new Set());
+    setSelectionAnchorId(null);
   };
 
   if (albums.length === 0 && photos.length === 0) {
@@ -1174,8 +1242,8 @@ function AlbumViewer({
           <AlbumActionBar
             surface={pageSurface}
             selectedCount={selectedPhotoIds.size}
-            selectedApprovedCount={selectedApprovedCount}
-            selectedPublishedCount={selectedPublishedCount}
+            selectedEmbeddableCount={selectedEmbeddableCount}
+            selectedSecondaryCount={selectedVisibleAlbumCount}
             visibleCount={selectedAlbumPhotos.length}
             busy={busy}
             embedReady={embedReady}
@@ -1187,9 +1255,15 @@ function AlbumViewer({
             }}
             onReload={() => void reload()}
             onNew={startNewAlbum}
-            onSubmit={() => void publishSelected()}
-            onUnpublish={() => void unpublishSelected()}
-            onEmbedSelected={onEmbedSelected}
+            primaryActionLabel="Show in public album"
+            secondaryActionLabel="Hide from public album"
+            onPrimaryAction={() => void updateSelectedAlbumPhotoVisibility('visible')}
+            onSecondaryAction={() => void updateSelectedAlbumPhotoVisibility('hidden')}
+            onEmbedSelected={() => onEmbedSelected({
+              photoIds: selectedAlbumScopedPhotos.filter((photo) => photo.visibility === 'visible').map((photo) => photo.id),
+              albumSlug: selectedAlbum.slug,
+              albumTitle: selectedAlbum.title,
+            })}
             onSelectAll={() => setAllVisible(!allVisibleSelected)}
             inAlbum
           />
@@ -1215,8 +1289,8 @@ function AlbumViewer({
         <AlbumActionBar
           surface={pageSurface}
           selectedCount={selectedPhotoIds.size}
-          selectedApprovedCount={selectedApprovedCount}
-          selectedPublishedCount={selectedPublishedCount}
+          selectedEmbeddableCount={selectedEmbeddableCount}
+          selectedSecondaryCount={selectedPendingGalleryCount}
           visibleCount={photos.length}
           busy={busy}
           embedReady={embedReady}
@@ -1225,9 +1299,11 @@ function AlbumViewer({
           onSurface={setPageSurface}
           onReload={() => void reload()}
           onNew={startNewAlbum}
-          onSubmit={() => void publishSelected()}
-          onUnpublish={() => void unpublishSelected()}
-          onEmbedSelected={onEmbedSelected}
+          primaryActionLabel="Submit to public gallery"
+          secondaryActionLabel="Withdraw from gallery"
+          onPrimaryAction={() => void submitSelectedToGallery()}
+          onSecondaryAction={() => void withdrawSelectedFromGallery()}
+          onEmbedSelected={() => onEmbedSelected()}
           onSelectAll={() => setAllVisible(!allVisibleSelected)}
         />
         <div className="columns-2 gap-3 sm:columns-3 xl:columns-4">
@@ -1272,8 +1348,8 @@ function AlbumViewer({
       <AlbumActionBar
         surface={pageSurface}
         selectedCount={selectedPhotoIds.size}
-        selectedApprovedCount={selectedApprovedCount}
-        selectedPublishedCount={selectedPublishedCount}
+        selectedEmbeddableCount={selectedEmbeddableCount}
+        selectedSecondaryCount={selectedPendingGalleryCount}
         visibleCount={albums.length}
         busy={busy}
         embedReady={embedReady}
@@ -1282,9 +1358,11 @@ function AlbumViewer({
         onSurface={setPageSurface}
         onReload={() => void reload()}
         onNew={startNewAlbum}
-        onSubmit={() => void publishSelected()}
-        onUnpublish={() => void unpublishSelected()}
-        onEmbedSelected={onEmbedSelected}
+        primaryActionLabel="Submit to public gallery"
+        secondaryActionLabel="Withdraw from gallery"
+        onPrimaryAction={() => void submitSelectedToGallery()}
+        onSecondaryAction={() => void withdrawSelectedFromGallery()}
+        onEmbedSelected={() => onEmbedSelected()}
         onSelectAll={() => undefined}
       />
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -1317,8 +1395,8 @@ function AlbumViewer({
 function AlbumActionBar({
   surface,
   selectedCount,
-  selectedApprovedCount,
-  selectedPublishedCount,
+  selectedEmbeddableCount,
+  selectedSecondaryCount,
   visibleCount,
   busy,
   embedReady,
@@ -1328,15 +1406,17 @@ function AlbumActionBar({
   onSurface,
   onReload,
   onNew,
-  onSubmit,
-  onUnpublish,
+  primaryActionLabel,
+  secondaryActionLabel,
+  onPrimaryAction,
+  onSecondaryAction,
   onEmbedSelected,
   onSelectAll,
 }: {
   surface: 'albums' | 'all';
   selectedCount: number;
-  selectedApprovedCount: number;
-  selectedPublishedCount: number;
+  selectedEmbeddableCount: number;
+  selectedSecondaryCount: number;
   visibleCount: number;
   busy: boolean;
   embedReady: boolean;
@@ -1346,15 +1426,19 @@ function AlbumActionBar({
   onSurface: (surface: 'albums' | 'all') => void;
   onReload: () => void;
   onNew: () => void;
-  onSubmit: () => void;
-  onUnpublish: () => void;
+  primaryActionLabel: string;
+  secondaryActionLabel: string;
+  onPrimaryAction: () => void;
+  onSecondaryAction: () => void;
   onEmbedSelected: () => void;
   onSelectAll: () => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
-  const embedSelectedLabel = selectedCount > 0 && selectedApprovedCount === 0
-    ? 'No approved photos selected'
+  const embedSelectedLabel = selectedCount > 0 && selectedEmbeddableCount === 0
+    ? inAlbum
+      ? 'Only visible photos in a public album can be embedded'
+      : 'Only approved gallery photos can be embedded'
     : 'Embed selected';
 
   useEffect(() => {
@@ -1401,8 +1485,8 @@ function AlbumActionBar({
         <ActionIconButton
           label={embedSelectedLabel}
           onClick={onEmbedSelected}
-          disabled={!embedReady || selectedApprovedCount === 0}
-          active={selectedApprovedCount > 0}
+          disabled={!embedReady || selectedEmbeddableCount === 0}
+          active={selectedEmbeddableCount > 0}
         >
           <Code2 size={14} strokeWidth={1.5} />
         </ActionIconButton>
@@ -1422,24 +1506,24 @@ function AlbumActionBar({
                   type="button"
                   onClick={() => {
                     setMenuOpen(false);
-                    onSubmit();
+                    onPrimaryAction();
                   }}
                   disabled={busy || selectedCount === 0}
                   className="flex items-center justify-between gap-3 px-3 py-2 text-left text-xs uppercase tracking-[0.18em] text-fg transition-colors hover:bg-faint disabled:cursor-not-allowed disabled:opacity-40"
                 >
-                  <span>Publish photos</span>
-                  <Send size={13} strokeWidth={1.5} />
+                  <span>{primaryActionLabel}</span>
+                  {inAlbum ? <Eye size={13} strokeWidth={1.5} /> : <Send size={13} strokeWidth={1.5} />}
                 </button>
                 <button
                   type="button"
                   onClick={() => {
                     setMenuOpen(false);
-                    onUnpublish();
+                    onSecondaryAction();
                   }}
-                  disabled={busy || selectedCount === 0 || selectedPublishedCount === 0}
+                  disabled={busy || selectedCount === 0 || selectedSecondaryCount === 0}
                   className="flex items-center justify-between gap-3 px-3 py-2 text-left text-xs uppercase tracking-[0.18em] text-fg transition-colors hover:bg-faint disabled:cursor-not-allowed disabled:opacity-40"
                 >
-                  <span>Unpublish photos</span>
+                  <span>{secondaryActionLabel}</span>
                   <Lock size={13} strokeWidth={1.5} />
                 </button>
               </div>
@@ -1672,6 +1756,11 @@ function PhotoGrid({
               onClick={(event) => onToggleSelection(photo.id, orderedIds, event.shiftKey)}
               className="absolute left-2 top-2"
             />
+            {'visibility' in photo && photo.visibility === 'hidden' && (
+              <div className="absolute bottom-2 right-2 border border-line bg-surface/90 px-1.5 py-1 text-[10px] uppercase tracking-wide">
+                Hidden
+              </div>
+            )}
           </div>
           {showTitles && (
             <div className="border-t border-line p-2">
@@ -1804,7 +1893,7 @@ function PhotoBulkTable({
   busy,
   accessToken,
 }: {
-  photos: AdminGalleryPhoto[];
+  photos: AlbumPhotoView[];
   drafts: Record<string, PhotoDraft>;
   selectedPhotoIds: Set<string>;
   selectionAnchorId: string | null;
@@ -1845,7 +1934,9 @@ function PhotoBulkTable({
             <div className="flex gap-3 lg:block">
               <AccountPhotoImage photo={photo} accessToken={accessToken} className="h-20 w-24 shrink-0 object-cover grayscale lg:h-20 lg:w-full" />
               <div className="min-w-0 lg:mt-2">
-                <div className="label">{photo.status}</div>
+                <div className="label">
+                  {photo.visibility === 'visible' ? 'Visible in album' : 'Hidden from album'} · {galleryStatusLabel(photo.galleryStatus)}
+                </div>
                 <div className="mt-1 truncate text-xs font-bold lg:hidden">{photo.title}</div>
               </div>
             </div>
@@ -1873,6 +1964,18 @@ function PhotoBulkTable({
             </div>
 
             <div className="flex gap-1 lg:flex-col">
+              <Button
+                title={photo.visibility === 'visible' ? 'Hide from public album' : 'Show in public album'}
+                onClick={() => setAlbumDraft((current) => ({
+                  ...current,
+                  photos: current.photos.map((item) => item.photoId === photo.id
+                    ? { ...item, visibility: item.visibility === 'visible' ? 'hidden' : 'visible' }
+                    : item),
+                }))}
+              >
+                {photo.visibility === 'visible' ? <Lock size={13} strokeWidth={1.5} /> : <Eye size={13} strokeWidth={1.5} />}
+                <span className="lg:sr-only">{photo.visibility === 'visible' ? 'Hide' : 'Show'}</span>
+              </Button>
               <Button onClick={() => void savePhoto(photo)} disabled={busy} title="Save details">
                 <Save size={13} strokeWidth={1.5} />
                 <span className="lg:sr-only">Save</span>
@@ -1881,7 +1984,7 @@ function PhotoBulkTable({
                 title="Remove from album"
                 onClick={() => setAlbumDraft((current) => ({
                   ...current,
-                  photoIds: current.photoIds.filter((id) => id !== photo.id),
+                  photos: current.photos.filter((item) => item.photoId !== photo.id),
                   coverPhotoId: current.coverPhotoId === photo.id ? '' : current.coverPhotoId,
                 }))}
               >
@@ -1894,7 +1997,7 @@ function PhotoBulkTable({
       })}
       {photos.length === 0 && (
         <div className="px-3 py-8 text-center text-xs text-muted">
-          Add photos to this album to edit their publishing details.
+          Add photos to this album to edit their visibility and gallery submission details.
         </div>
       )}
     </div>
@@ -1905,6 +2008,7 @@ function AccountLightboxInfo({
   photo,
   busy,
   embedReady,
+  canEmbed,
   onEdit,
   onPublish,
   onEmbed,
@@ -1912,6 +2016,7 @@ function AccountLightboxInfo({
   photo: AdminGalleryPhoto;
   busy: boolean;
   embedReady: boolean;
+  canEmbed: boolean;
   onEdit: () => void;
   onPublish: () => void;
   onEmbed: () => void;
@@ -1925,7 +2030,7 @@ function AccountLightboxInfo({
     <div className="space-y-5">
       <div>
         <div className="text-sm font-bold">{photo.title}</div>
-        <div className="label mt-1">{photo.status}</div>
+        <div className="label mt-1">{galleryStatusLabel(photo.galleryStatus)}</div>
       </div>
 
       <PhotoOpticsPanel
@@ -1958,13 +2063,13 @@ function AccountLightboxInfo({
         <Button
           className="w-full"
           onClick={onEmbed}
-          disabled={!embedReady || photo.status !== 'approved'}
-          title={photo.status === 'approved' ? 'Copy iframe code' : 'Publish to embed'}
+          disabled={!embedReady || !canEmbed}
+          title={canEmbed ? 'Copy iframe code' : 'Make the photo public in a non-protected album or approve it in the gallery first'}
         >
           <Code2 size={14} strokeWidth={1.5} />
           Copy embed code
         </Button>
-        <Button variant="solid" className="w-full" onClick={onPublish} disabled={busy || photo.status === 'approved'}>
+        <Button variant="solid" className="w-full" onClick={onPublish} disabled={busy || photo.galleryStatus === 'approved'}>
           <Send size={14} strokeWidth={1.5} />
           Submit to public gallery
         </Button>
@@ -2119,7 +2224,25 @@ function draftFromAlbum(album: GalleryAlbum): AlbumDraft {
     hasPassword: album.hasPassword === true,
     albumPassword: '',
     coverPhotoId: album.coverPhotoId ?? '',
-    photoIds: album.photos.map((photo) => photo.id),
+    photos: album.photos.map((photo) => ({
+      photoId: photo.photoId,
+      caption: photo.caption ?? null,
+      visibility: photo.visibility,
+    })),
+  };
+}
+
+function albumPhotoView(
+  photo: AdminGalleryPhoto,
+  membership: { photoId: string; visibility: GalleryAlbumPhotoVisibility; caption?: string | null },
+  sortOrder: number,
+): AlbumPhotoView {
+  return {
+    ...photo,
+    photoId: membership.photoId,
+    visibility: membership.visibility,
+    sortOrder,
+    ...(membership.caption ? { caption: membership.caption } : {}),
   };
 }
 
@@ -2245,6 +2368,20 @@ function albumVisibilityLabel(status: GalleryAlbumStatus) {
   return status === 'published' ? 'Public' : 'Private';
 }
 
+function galleryStatusLabel(status: AdminGalleryPhoto['galleryStatus']) {
+  switch (status) {
+    case 'approved':
+      return 'Public gallery';
+    case 'pending':
+      return 'Pending review';
+    case 'rejected':
+      return 'Rejected';
+    case 'not_submitted':
+    default:
+      return 'Library only';
+  }
+}
+
 function formatDate(value?: string | null): string {
   if (!value) return 'never';
   const date = new Date(value);
@@ -2256,14 +2393,18 @@ function formatDate(value?: string | null): string {
   });
 }
 
-function albumPayload(draft: AlbumDraft): Partial<GalleryAlbum> & { photoIds: string[]; albumPassword?: string | null } {
-  const payload: Partial<GalleryAlbum> & { photoIds: string[]; albumPassword?: string | null } = {
+function albumPayload(draft: AlbumDraft): AlbumMutation {
+  const payload: AlbumMutation = {
     slug: draft.slug,
     title: draft.title,
     description: draft.description,
     status: draft.status,
     coverPhotoId: draft.coverPhotoId || null,
-    photoIds: draft.photoIds,
+    photos: draft.photos.map((photo) => ({
+      photoId: photo.photoId,
+      caption: photo.caption ?? null,
+      visibility: photo.visibility,
+    })),
   };
   const trimmedPassword = draft.albumPassword.trim();
   if (trimmedPassword) {
@@ -2275,21 +2416,21 @@ function albumPayload(draft: AlbumDraft): Partial<GalleryAlbum> & { photoIds: st
 }
 
 function addPhotosToAlbumDraft(draft: AlbumDraft, photoIds: string[]): AlbumDraft {
-  const nextIds = appendUnique(draft.photoIds, photoIds);
+  const nextPhotos = appendUniqueAlbumPhotos(draft.photos, photoIds);
   return {
     ...draft,
-    photoIds: nextIds,
+    photos: nextPhotos,
     coverPhotoId: draft.coverPhotoId || photoIds[0] || '',
   };
 }
 
-function appendUnique(current: string[], additions: string[]): string[] {
-  const seen = new Set(current);
+function appendUniqueAlbumPhotos(current: AlbumDraftPhoto[], additions: string[]): AlbumDraftPhoto[] {
+  const seen = new Set(current.map((photo) => photo.photoId));
   const next = [...current];
   for (const id of additions) {
     if (!seen.has(id)) {
       seen.add(id);
-      next.push(id);
+      next.push({ photoId: id, visibility: 'visible', caption: null });
     }
   }
   return next;
@@ -2357,7 +2498,7 @@ function AccountPhotoImage({
   accessToken,
   className,
 }: {
-  photo: AdminGalleryPhoto;
+  photo: Pick<AdminGalleryPhoto, 'id' | 'galleryStatus' | 'src'>;
   accessToken: string | null;
   className: string;
 }) {
@@ -2368,8 +2509,8 @@ function AccountPhotoImage({
     let objectUrl: string | null = null;
     setSrc(null);
 
-    if (photo.status === 'approved') {
-      setSrc(`/api/gallery/photos/${photo.id}/image`);
+    if (photo.src?.startsWith('/api/gallery/')) {
+      setSrc(photo.src);
       return undefined;
     }
     if (!accessToken) return undefined;
@@ -2394,7 +2535,7 @@ function AccountPhotoImage({
       cancelled = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [accessToken, photo.id, photo.status]);
+  }, [accessToken, photo.id, photo.src]);
 
   if (!src) {
     return (

@@ -1,6 +1,8 @@
 import {
   cleanId,
   json,
+  legacyStatusFromGalleryStatus,
+  legacyStatusToGalleryStatus,
   normalizeTags,
   photoFromRow,
   type GalleryEnv,
@@ -29,12 +31,13 @@ export const onRequestGet: PagesFunction<Env> = async ({ env, request }) => {
 
   const url = new URL(request.url);
   const status = url.searchParams.get('status');
-  const includeStatus = status && ['draft', 'pending', 'approved', 'rejected'].includes(status);
+  const includeStatus = status && ['draft', 'pending', 'approved', 'rejected', 'not_submitted'].includes(status);
+  const queryStatus = includeStatus ? legacyStatusToGalleryStatus(status) : null;
   const query = includeStatus
-    ? `SELECT * FROM gallery_photos WHERE status = ? ORDER BY updated_at DESC`
+    ? `SELECT * FROM gallery_photos WHERE gallery_status = ? ORDER BY updated_at DESC`
     : `SELECT * FROM gallery_photos ORDER BY updated_at DESC`;
   const statement = env.GALLERY_DB.prepare(query);
-  const rows = includeStatus ? await statement.bind(status).all<GalleryRow>() : await statement.all<GalleryRow>();
+  const rows = includeStatus ? await statement.bind(queryStatus).all<GalleryRow>() : await statement.all<GalleryRow>();
 
   return json({ photos: (rows.results ?? []).map((row) => photoFromRow(row, true)) });
 };
@@ -59,11 +62,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ env, request }) => {
   const id = cleanId(String(form.get('id') ?? title)) || crypto.randomUUID();
   const ext = extensionForFile(file);
   const objectKey = `photos/${id}/original.${ext}`;
-  const status = String(form.get('status') ?? 'pending');
+  const status = String(form.get('galleryStatus') ?? form.get('status') ?? 'pending');
 
-  if (!['draft', 'pending', 'approved', 'rejected'].includes(status)) {
+  if (!['draft', 'pending', 'approved', 'rejected', 'not_submitted'].includes(status)) {
     return json({ error: 'invalid status' }, { status: 400 });
   }
+  const galleryStatus = legacyStatusToGalleryStatus(status);
 
   const formatId = galleryFormatIdOrDefault(form.get('formatId'));
   if (!formatId) return json({ error: 'invalid formatId' }, { status: 400 });
@@ -85,18 +89,19 @@ export const onRequestPost: PagesFunction<Env> = async ({ env, request }) => {
   const submittedBy = stringOrNull(form.get('submittedBy')) ?? identity.sub;
   await env.GALLERY_DB.prepare(
     `INSERT INTO gallery_photos (
-      id, title, author, status, object_key, content_type, width, height,
+      id, title, author, status, gallery_status, gallery_status_review_required, object_key, content_type, width, height,
       format_id, camera, camera_catalog_id, lens, lens_catalog_id, focal, aperture,
       subject_preset, subject_width_m, shutter_speed, iso, captured_at,
       tags_json, metadata_source_json, submitted_by,
       notes, created_at, updated_at, published_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
     .bind(
       id,
       title,
       String(form.get('author') ?? '').trim(),
-      status,
+      legacyStatusFromGalleryStatus(galleryStatus),
+      galleryStatus,
       objectKey,
       file.type || 'application/octet-stream',
       numberOrNull(form.get('width')),

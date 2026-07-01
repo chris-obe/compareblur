@@ -44,11 +44,15 @@ export function albumEmbedUrl(slug: string, opts: { count?: number; layout?: Emb
 }
 
 /** Selected-set embed: the exact photo ids chosen via multi-select (ephemeral, capped). */
-export function selectionEmbedUrl(ids: string[], opts: { layout?: EmbedLayout } = {}): string {
+export function selectionEmbedUrl(
+  ids: string[],
+  opts: { layout?: EmbedLayout; albumSlug?: string | null } = {},
+): string {
   const capped = ids.slice(0, EMBED_SELECTION_LIMIT);
   const params = new URLSearchParams();
   params.set('ids', capped.join(','));
   if (opts.layout) params.set('layout', opts.layout);
+  if (opts.albumSlug) params.set('album', opts.albumSlug);
   return `${origin()}/embed/photos?${params.toString()}`;
 }
 

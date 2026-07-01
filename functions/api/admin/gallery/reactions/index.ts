@@ -1,5 +1,5 @@
 import { adminAuthError, requireAdmin } from '../../../../_lib/admin';
-import { json, type GalleryEnv } from '../../../../_lib/gallery';
+import { galleryStatusFromRow, json, type GalleryEnv } from '../../../../_lib/gallery';
 
 type Env = GalleryEnv & {
   AUTH0_AUDIENCE?: string;
@@ -21,6 +21,7 @@ interface PhotoReactionRow {
   photo_id: string;
   title: string;
   status: string;
+  gallery_status: string | null;
   total: number;
   dislike_count: number;
   like_count: number;
@@ -60,6 +61,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ env, request }) => {
        p.id AS photo_id,
        p.title,
        p.status,
+       p.gallery_status,
        COUNT(r.reaction) AS total,
        COALESCE(SUM(CASE WHEN r.reaction = 'dislike' THEN 1 ELSE 0 END), 0) AS dislike_count,
        COALESCE(SUM(CASE WHEN r.reaction = 'like' THEN 1 ELSE 0 END), 0) AS like_count,
@@ -98,7 +100,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ env, request }) => {
     byPhoto: (byPhoto.results ?? []).map((row) => ({
       photoId: row.photo_id,
       title: row.title,
-      status: row.status,
+      status: adminReactionStatusLabel(row.status, row.gallery_status),
       total: Number(row.total ?? 0),
       dislike: Number(row.dislike_count ?? 0),
       like: Number(row.like_count ?? 0),
@@ -116,3 +118,16 @@ export const onRequestGet: PagesFunction<Env> = async ({ env, request }) => {
     })),
   });
 };
+
+function adminReactionStatusLabel(status: string, galleryStatus: string | null) {
+  switch (galleryStatusFromRow({ status, gallery_status: galleryStatus })) {
+    case 'approved':
+      return 'public gallery';
+    case 'pending':
+      return 'pending review';
+    case 'rejected':
+      return 'rejected';
+    case 'not_submitted':
+      return 'library only';
+  }
+}

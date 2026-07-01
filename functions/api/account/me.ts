@@ -1,6 +1,6 @@
 import { adminAuthError, requireAuth0User } from '../../_lib/admin';
 import { auth0ManagementRequest, type Auth0ManagementEnv } from '../../_lib/auth0Management';
-import { json, type GalleryEnv } from '../../_lib/gallery';
+import { galleryStatusFromRow, json, type GalleryEnv } from '../../_lib/gallery';
 
 type Env = Auth0ManagementEnv & GalleryEnv & {
   AUTH0_AUDIENCE?: string;
@@ -40,6 +40,7 @@ interface UploadRow {
   id: string;
   title: string;
   status: string;
+  gallery_status: string | null;
   submitted_by: string | null;
   created_at: string;
   updated_at: string;
@@ -51,7 +52,7 @@ interface UploadStatsRow {
   approved: number;
   pending: number;
   rejected: number;
-  draft: number;
+  not_submitted: number;
   admin_owned_unattributed: number;
 }
 
@@ -66,6 +67,7 @@ interface ReactionRow {
   photo_id: string;
   title: string;
   status: string;
+  gallery_status: string | null;
   reaction: string;
   updated_at: string;
 }
@@ -186,11 +188,11 @@ async function loadUploadStats(env: GalleryEnv, sub: string, isAdmin: boolean) {
   const where = isAdmin ? `(submitted_by = ? OR submitted_by IS NULL OR submitted_by = '')` : `submitted_by = ?`;
   const row = await env.GALLERY_DB.prepare(
     `SELECT
-       COUNT(*) AS total,
-       COALESCE(SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END), 0) AS approved,
-       COALESCE(SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END), 0) AS pending,
-       COALESCE(SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END), 0) AS rejected,
-       COALESCE(SUM(CASE WHEN status = 'draft' THEN 1 ELSE 0 END), 0) AS draft,
+      COUNT(*) AS total,
+       COALESCE(SUM(CASE WHEN gallery_status = 'approved' THEN 1 ELSE 0 END), 0) AS approved,
+       COALESCE(SUM(CASE WHEN gallery_status = 'pending' THEN 1 ELSE 0 END), 0) AS pending,
+       COALESCE(SUM(CASE WHEN gallery_status = 'rejected' THEN 1 ELSE 0 END), 0) AS rejected,
+       COALESCE(SUM(CASE WHEN gallery_status = 'not_submitted' THEN 1 ELSE 0 END), 0) AS not_submitted,
        COALESCE(SUM(CASE WHEN submitted_by IS NULL OR submitted_by = '' THEN 1 ELSE 0 END), 0) AS admin_owned_unattributed
      FROM gallery_photos
      WHERE ${where}`,
@@ -203,7 +205,7 @@ async function loadUploadStats(env: GalleryEnv, sub: string, isAdmin: boolean) {
     approved: Number(row?.approved ?? 0),
     pending: Number(row?.pending ?? 0),
     rejected: Number(row?.rejected ?? 0),
-    draft: Number(row?.draft ?? 0),
+    draft: Number(row?.not_submitted ?? 0),
     adminOwnedUnattributed: Number(row?.admin_owned_unattributed ?? 0),
   };
 }
@@ -211,7 +213,7 @@ async function loadUploadStats(env: GalleryEnv, sub: string, isAdmin: boolean) {
 async function loadUploads(env: GalleryEnv, sub: string, isAdmin: boolean) {
   const where = isAdmin ? `(submitted_by = ? OR submitted_by IS NULL OR submitted_by = '')` : `submitted_by = ?`;
   const rows = await env.GALLERY_DB.prepare(
-    `SELECT id, title, status, submitted_by, created_at, updated_at, published_at
+    `SELECT id, title, status, gallery_status, submitted_by, created_at, updated_at, published_at
      FROM gallery_photos
      WHERE ${where}
      ORDER BY updated_at DESC
@@ -223,7 +225,7 @@ async function loadUploads(env: GalleryEnv, sub: string, isAdmin: boolean) {
   return (rows.results ?? []).map((row) => ({
     id: row.id,
     title: row.title,
-    status: row.status,
+    status: galleryStatusLabel(row.status, row.gallery_status),
     ownership: row.submitted_by ? 'uploaded' : 'admin-owned',
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -254,7 +256,7 @@ async function loadReactionStats(env: GalleryEnv, sub: string) {
 
 async function loadReactions(env: GalleryEnv, sub: string) {
   const rows = await env.GALLERY_DB.prepare(
-    `SELECT r.photo_id, p.title, p.status, r.reaction, r.updated_at
+    `SELECT r.photo_id, p.title, p.status, p.gallery_status, r.reaction, r.updated_at
      FROM gallery_reactions r
      JOIN gallery_photos p ON p.id = r.photo_id
      WHERE r.user_sub = ?
@@ -267,10 +269,23 @@ async function loadReactions(env: GalleryEnv, sub: string) {
   return (rows.results ?? []).map((row) => ({
     photoId: row.photo_id,
     title: row.title,
-    status: row.status,
+    status: galleryStatusLabel(row.status, row.gallery_status),
     reaction: row.reaction,
     updatedAt: row.updated_at,
   }));
+}
+
+function galleryStatusLabel(status: string, galleryStatus: string | null) {
+  switch (galleryStatusFromRow({ status, gallery_status: galleryStatus })) {
+    case 'approved':
+      return 'public gallery';
+    case 'pending':
+      return 'pending review';
+    case 'rejected':
+      return 'rejected';
+    case 'not_submitted':
+      return 'library only';
+  }
 }
 
 function sanitizeProfile(profile: Partial<AppProfile>): AppProfile {

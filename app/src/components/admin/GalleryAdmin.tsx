@@ -8,8 +8,8 @@ import {
   updateAdminGalleryPhoto,
   uploadAdminGalleryPhoto,
   type AdminGalleryPhoto,
+  type GalleryModerationStatus,
   type GalleryTag,
-  type GalleryStatus,
 } from '../../lib/galleryApi';
 import {
   GALLERY_UPLOAD_MAX_BYTES,
@@ -51,11 +51,11 @@ interface UploadFields {
   iso: string;
   capturedAt: string;
   tags: string[];
-  status: GalleryStatus;
+  status: GalleryModerationStatus;
   notes: string;
 }
 
-const STATUS_ORDER: GalleryStatus[] = ['pending', 'approved', 'draft', 'rejected'];
+const STATUS_ORDER: GalleryModerationStatus[] = ['pending', 'approved', 'not_submitted', 'rejected'];
 const INITIAL_FIELDS: UploadFields = {
   title: '',
   author: '',
@@ -81,7 +81,7 @@ export function GalleryAdmin({ accessToken, photos, loading, loaded, error, tags
   const [busyId, setBusyId] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [readingExif, setReadingExif] = useState(false);
-  const [status, setStatus] = useState<GalleryStatus | 'all'>('all');
+  const [status, setStatus] = useState<GalleryModerationStatus | 'all'>('all');
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [suggestion, setSuggestion] = useState<GalleryMetadataSuggestion | null>(null);
@@ -98,20 +98,21 @@ export function GalleryAdmin({ accessToken, photos, loading, loaded, error, tags
   }, [previewUrl]);
 
   const filtered = useMemo(
-    () => (status === 'all' ? photos : photos.filter((photo) => photo.status === status)),
+    () => (status === 'all' ? photos : photos.filter((photo) => photo.galleryStatus === status)),
     [photos, status],
   );
 
   const counts = useMemo(() => {
     return photos.reduce<Record<string, number>>(
       (acc, photo) => {
-        acc[photo.status] = (acc[photo.status] ?? 0) + 1;
+        acc[photo.galleryStatus] = (acc[photo.galleryStatus] ?? 0) + 1;
         acc.all += 1;
         return acc;
       },
       { all: 0 },
     );
   }, [photos]);
+  const reviewCount = useMemo(() => photos.filter((photo) => photo.galleryStatusNeedsReview).length, [photos]);
 
   const activeTags = useMemo(() => tags.filter((tag) => !tag.archived), [tags]);
   const cameraOptions = useMemo<FreeTextOption[]>(
@@ -233,10 +234,10 @@ export function GalleryAdmin({ accessToken, photos, loading, loaded, error, tags
     }));
   };
 
-  const updateStatus = async (photo: AdminGalleryPhoto, next: GalleryStatus) => {
+  const updateStatus = async (photo: AdminGalleryPhoto, next: GalleryModerationStatus) => {
     setBusyId(photo.id);
     try {
-      await updateAdminGalleryPhoto(photo.id, { status: next }, accessToken);
+      await updateAdminGalleryPhoto(photo.id, { galleryStatus: next }, accessToken);
       await onReload();
     } catch (err) {
       onError(err instanceof Error ? err.message : 'Gallery update failed');
@@ -262,7 +263,7 @@ export function GalleryAdmin({ accessToken, photos, loading, loaded, error, tags
       await updateAdminGalleryPhoto(editing.id, {
         title: editing.fields.title,
         author: editing.fields.author,
-        status: editing.fields.status,
+        galleryStatus: editing.fields.status,
         formatId: normalizedFormatId(editing.fields.formatId),
         camera: editing.fields.camera,
         cameraCatalogId: editing.fields.cameraCatalogId,
@@ -331,7 +332,7 @@ export function GalleryAdmin({ accessToken, photos, loading, loaded, error, tags
     form.set('iso', fields.iso);
     form.set('capturedAt', fields.capturedAt);
     form.set('tags', fields.tags.join(','));
-    form.set('status', fields.status);
+    form.set('galleryStatus', fields.status);
     form.set('width', String(image.width));
     form.set('height', String(image.height));
     form.set('metadataSource', JSON.stringify({
@@ -374,7 +375,7 @@ export function GalleryAdmin({ accessToken, photos, loading, loaded, error, tags
               status === item ? 'border-fg bg-fg text-bg' : 'border-line text-muted hover:border-line-strong hover:text-fg',
             ].join(' ')}
           >
-            {item} {counts[item] ?? 0}
+            {item === 'all' ? 'all' : galleryStatusLabel(item)} {counts[item] ?? 0}
           </button>
         ))}
         <Button onClick={onReload} disabled={loading}>
@@ -574,6 +575,12 @@ export function GalleryAdmin({ accessToken, photos, loading, loaded, error, tags
         </form>
       )}
 
+      {reviewCount > 0 && (
+        <div className="border border-line bg-faint p-3 text-xs">
+          {reviewCount} uploaded photo{reviewCount === 1 ? '' : 's'} need review because they were previously auto-promoted into the public gallery.
+        </div>
+      )}
+
       <div className="overflow-x-auto border border-line">
         <table className="w-full min-w-[58rem] border-collapse text-left text-xs">
           <thead className="bg-faint text-muted">
@@ -600,7 +607,16 @@ export function GalleryAdmin({ accessToken, photos, loading, loaded, error, tags
                     </div>
                   </div>
                 </Td>
-                <Td>{photo.status}</Td>
+                <Td>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span>{photo.galleryStatus}</span>
+                    {photo.galleryStatusNeedsReview && (
+                      <span className="inline-flex items-center gap-1 border border-line px-2 py-1 text-[10px] uppercase tracking-[0.16em]">
+                        Review
+                      </span>
+                    )}
+                  </div>
+                </Td>
                 <Td>{photo.formatId}</Td>
                 <Td>{photo.camera}</Td>
                 <Td>{photo.lens}</Td>
@@ -608,7 +624,7 @@ export function GalleryAdmin({ accessToken, photos, loading, loaded, error, tags
                 <Td>{photo.updatedAt ? new Date(photo.updatedAt).toLocaleString() : 'Unknown'}</Td>
                 <Td>
                   <div className="flex flex-wrap gap-2">
-                    {photo.status === 'approved' ? (
+                    {photo.galleryStatus === 'approved' ? (
                       <span className="inline-flex items-center gap-2 border border-line bg-faint px-3 py-1.5 text-xs uppercase tracking-wide">
                         <Check size={13} strokeWidth={1.5} />
                         Live
@@ -653,9 +669,9 @@ function AuthenticatedThumbnail({ photo, accessToken }: { photo: AdminGalleryPho
   useEffect(() => {
     let cancelled = false;
     let objectUrl: string | null = null;
-    const imageSrc = photo.status === 'approved' ? `/api/gallery/photos/${photo.id}/image` : photo.src;
+    const imageSrc = photo.galleryStatus === 'approved' ? `/api/gallery/photos/${photo.id}/image` : photo.src;
     const headers = new Headers({ accept: photo.contentType ?? 'image/*' });
-    if (photo.status !== 'approved' && accessToken) headers.set('authorization', `Bearer ${accessToken}`);
+    if (photo.galleryStatus !== 'approved' && accessToken) headers.set('authorization', `Bearer ${accessToken}`);
 
     fetch(imageSrc, { headers })
       .then((res) => {
@@ -675,7 +691,7 @@ function AuthenticatedThumbnail({ photo, accessToken }: { photo: AdminGalleryPho
       cancelled = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [accessToken, photo.contentType, photo.id, photo.src, photo.status]);
+  }, [accessToken, photo.contentType, photo.galleryStatus, photo.id, photo.src]);
 
   if (!src) return <div className="flex h-14 w-20 items-center justify-center border border-line bg-faint"><Upload size={14} strokeWidth={1.5} /></div>;
   return <img src={src} alt="" className="h-14 w-20 border border-line object-cover grayscale" />;
@@ -705,9 +721,22 @@ function fieldsFromPhoto(photo: AdminGalleryPhoto): UploadFields {
     iso: photo.iso != null ? String(photo.iso) : '',
     capturedAt: dateInputValue(photo.capturedAt),
     tags: photo.tags,
-    status: photo.status,
+    status: photo.galleryStatus,
     notes: photo.notes ?? '',
   };
+}
+
+function galleryStatusLabel(status: GalleryModerationStatus) {
+  switch (status) {
+    case 'approved':
+      return 'approved';
+    case 'pending':
+      return 'pending';
+    case 'rejected':
+      return 'rejected';
+    case 'not_submitted':
+      return 'library only';
+  }
 }
 
 function numberOrFallback(value: string, fallback: number): number {
@@ -905,8 +934,8 @@ function SelectField({
 }: {
   label: string;
   value: string;
-  onChange: (value: GalleryStatus) => void;
-  options: GalleryStatus[];
+  onChange: (value: GalleryModerationStatus) => void;
+  options: GalleryModerationStatus[];
   className?: string;
 }) {
   return (
@@ -914,12 +943,12 @@ function SelectField({
       <span className="label mb-1 block">{label}</span>
       <select
         value={value}
-        onChange={(event) => onChange(event.target.value as GalleryStatus)}
+        onChange={(event) => onChange(event.target.value as GalleryModerationStatus)}
         className="w-full border border-line bg-transparent px-2 py-1.5 text-xs outline-none focus:border-line-strong"
       >
         {options.map((option) => (
           <option key={option} value={option}>
-            {option}
+            {galleryStatusLabel(option)}
           </option>
         ))}
       </select>

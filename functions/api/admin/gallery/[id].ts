@@ -1,6 +1,9 @@
 import {
   findPhoto,
+  galleryStatusFromRow,
   json,
+  legacyStatusFromGalleryStatus,
+  legacyStatusToGalleryStatus,
   normalizeTags,
   parseTags,
   photoFromRow,
@@ -52,7 +55,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ env, params, request 
   const next = {
     title: stringValue(body.title, current.title),
     author: stringValue(body.author, current.author),
-    status: statusValue(body.status, current.status),
+    galleryStatus: galleryStatusValue(body.galleryStatus ?? body.status, galleryStatusFromRow(current)),
     formatId,
     camera: stringValue(body.camera, current.camera),
     cameraCatalogId: nullableStringValue(body.cameraCatalogId, current.camera_catalog_id),
@@ -72,11 +75,13 @@ export const onRequestPatch: PagesFunction<Env> = async ({ env, params, request 
     notes: stringValue(body.notes, current.notes ?? ''),
   };
   const now = new Date().toISOString();
-  const publishedAt = next.status === 'approved' ? current.published_at ?? now : null;
+  const nextLegacyStatus = legacyStatusFromGalleryStatus(next.galleryStatus);
+  const publishedAt = next.galleryStatus === 'approved' ? current.published_at ?? now : null;
 
   await env.GALLERY_DB.prepare(
     `UPDATE gallery_photos
-     SET title = ?, author = ?, status = ?, format_id = ?, camera = ?, camera_catalog_id = ?,
+     SET title = ?, author = ?, status = ?, gallery_status = ?, gallery_status_review_required = 0,
+         format_id = ?, camera = ?, camera_catalog_id = ?,
          lens = ?, lens_catalog_id = ?, focal = ?, aperture = ?, tags_json = ?,
          subject_preset = ?, subject_width_m = ?, shutter_speed = ?, iso = ?, captured_at = ?,
          metadata_source_json = ?, notes = ?, updated_at = ?, published_at = ?
@@ -85,7 +90,8 @@ export const onRequestPatch: PagesFunction<Env> = async ({ env, params, request 
     .bind(
       next.title,
       next.author,
-      next.status,
+      nextLegacyStatus,
+      next.galleryStatus,
       next.formatId,
       next.camera,
       next.cameraCatalogId,
@@ -150,8 +156,14 @@ function numberValue(value: unknown, fallback: number) {
 }
 
 function statusValue(value: unknown, fallback: string) {
-  return typeof value === 'string' && ['draft', 'pending', 'approved', 'rejected'].includes(value)
-    ? value
+  return typeof value === 'string' && ['draft', 'pending', 'approved', 'rejected', 'not_submitted'].includes(value)
+    ? legacyStatusFromGalleryStatus(legacyStatusToGalleryStatus(value))
+    : fallback;
+}
+
+function galleryStatusValue(value: unknown, fallback: ReturnType<typeof legacyStatusToGalleryStatus>) {
+  return typeof value === 'string'
+    ? legacyStatusToGalleryStatus(value)
     : fallback;
 }
 

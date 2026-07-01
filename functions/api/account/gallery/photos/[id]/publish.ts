@@ -1,5 +1,11 @@
 import { adminAuthError, requireAuth0User } from '../../../../../_lib/admin';
-import { json, type GalleryEnv, type GalleryRow } from '../../../../../_lib/gallery';
+import {
+  galleryStatusFromRow,
+  json,
+  legacyStatusFromGalleryStatus,
+  type GalleryEnv,
+  type GalleryRow,
+} from '../../../../../_lib/gallery';
 
 type Env = GalleryEnv & {
   AUTH0_AUDIENCE?: string;
@@ -18,15 +24,18 @@ export const onRequestPost: PagesFunction<Env> = async ({ env, params, request }
     if (missing.length > 0) return json({ error: `Missing required fields: ${missing.join(', ')}` }, { status: 400 });
 
     const now = new Date().toISOString();
+    const currentStatus = galleryStatusFromRow(row);
+    const nextStatus = currentStatus === 'approved' ? 'approved' : 'pending';
     await env.GALLERY_DB.prepare(
       `UPDATE gallery_photos
-       SET status = CASE WHEN status = 'approved' THEN status ELSE 'pending' END,
+       SET status = ?,
+           gallery_status = ?,
            updated_at = ?
        WHERE id = ? AND submitted_by = ?`,
     )
-      .bind(now, id, identity.sub)
+      .bind(legacyStatusFromGalleryStatus(nextStatus), nextStatus, now, id, identity.sub)
       .run();
-    return json({ ok: true, status: row.status === 'approved' ? 'approved' : 'pending' });
+    return json({ ok: true, status: legacyStatusFromGalleryStatus(nextStatus), galleryStatus: nextStatus });
   } catch (error) {
     return adminAuthError(error);
   }
@@ -40,18 +49,23 @@ export const onRequestDelete: PagesFunction<Env> = async ({ env, params, request
       .bind(id, identity.sub)
       .first<GalleryRow>();
     if (!row) return json({ error: 'photo not found' }, { status: 404 });
+    const currentStatus = galleryStatusFromRow(row);
+    if (currentStatus === 'approved' || currentStatus === 'rejected') {
+      return json({ error: 'only pending submissions can be withdrawn' }, { status: 409 });
+    }
 
     const now = new Date().toISOString();
     await env.GALLERY_DB.prepare(
       `UPDATE gallery_photos
-       SET status = 'draft',
+       SET status = ?,
+           gallery_status = 'not_submitted',
            updated_at = ?,
            published_at = NULL
        WHERE id = ? AND submitted_by = ?`,
     )
-      .bind(now, id, identity.sub)
+      .bind(legacyStatusFromGalleryStatus('not_submitted'), now, id, identity.sub)
       .run();
-    return json({ ok: true, status: 'draft' });
+    return json({ ok: true, status: legacyStatusFromGalleryStatus('not_submitted'), galleryStatus: 'not_submitted' });
   } catch (error) {
     return adminAuthError(error);
   }

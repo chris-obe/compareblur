@@ -5,7 +5,6 @@ import {
   normalizeAlbumStatus,
   normalizePhotoInputs,
   ownerNameForIdentity,
-  publishAlbumPhotos,
   ownedAlbumWithPhotos,
   replaceAlbumPhotos,
   type GalleryAlbumRow,
@@ -74,9 +73,6 @@ export const onRequestPatch: PagesFunction<Env> = async ({ env, params, request 
         approvedOnly: false,
         ownerSub: identity.sub,
       });
-    }
-    if (status === 'published') {
-      await publishAlbumPhotos(env, nextSlug, { ownerSub: identity.sub });
     }
 
     return json({ album: await ownedAlbumWithPhotos(env, nextSlug, identity.sub) });

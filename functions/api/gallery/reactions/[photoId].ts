@@ -1,5 +1,5 @@
 import { adminAuthError, requireAuth0User } from '../../../_lib/admin';
-import { findPhoto, json, type GalleryEnv } from '../../../_lib/gallery';
+import { findPhoto, galleryStatusFromRow, json, type GalleryEnv } from '../../../_lib/gallery';
 import { isGalleryReaction, reactionCountsForPhoto } from '../../../_lib/reactions';
 
 type Env = GalleryEnv & {
@@ -17,7 +17,7 @@ export const onRequestPut: PagesFunction<Env> = async ({ env, params, request })
 
   const photoId = String(params.photoId);
   const photo = await findPhoto(env, photoId);
-  if (!photo || photo.status !== 'approved') return json({ error: 'photo not found' }, { status: 404 });
+  if (!photo || galleryStatusFromRow(photo) !== 'approved') return json({ error: 'photo not found' }, { status: 404 });
 
   const body = (await request.json().catch(() => ({}))) as { reaction?: unknown };
   if (!isGalleryReaction(body.reaction)) {

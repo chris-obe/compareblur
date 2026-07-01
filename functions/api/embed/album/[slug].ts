@@ -2,7 +2,7 @@ import { json, type GalleryEnv } from '../../../_lib/gallery';
 import { GALLERY_FORMAT_IDS } from '../../../_lib/formats';
 import { getEmbedTemplate, publicAlbumWithPhotos, publicJson } from '../../../_lib/embed';
 
-// Public album auto-select embed: the first N approved photos of a PUBLISHED album.
+// Public album auto-select embed: the first N visible photos of a public album.
 export const onRequestGet: PagesFunction<GalleryEnv> = async ({ env, params, request }) => {
   const slug = String(params.slug);
   const album = await publicAlbumWithPhotos(env, slug);

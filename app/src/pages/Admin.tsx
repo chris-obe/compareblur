@@ -386,7 +386,11 @@ function AdminConsole() {
       {
         label: 'Gallery',
         value: galleryLoaded ? `${galleryPhotos.length} photos` : 'Loading',
-        detail: galleryError ?? `${galleryPhotos.filter((photo) => photo.status === 'pending').length} pending approval`,
+        detail: galleryError ?? (
+          galleryPhotos.some((photo) => photo.galleryStatusNeedsReview)
+            ? `${galleryPhotos.filter((photo) => photo.galleryStatusNeedsReview).length} need review`
+            : `${galleryPhotos.filter((photo) => photo.galleryStatus === 'pending').length} pending approval`
+        ),
       },
       {
         label: 'Reactions',

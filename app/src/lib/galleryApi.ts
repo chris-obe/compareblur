@@ -2,9 +2,13 @@ import type { GalleryItem } from './types';
 import type { Reaction, ReactionCounts } from './reactions';
 
 export type GalleryStatus = 'draft' | 'pending' | 'approved' | 'rejected';
+export type GalleryModerationStatus = 'not_submitted' | 'pending' | 'approved' | 'rejected';
+export type GalleryAlbumPhotoVisibility = 'visible' | 'hidden';
 
 export interface AdminGalleryPhoto extends GalleryItem {
   status: GalleryStatus;
+  galleryStatus: GalleryModerationStatus;
+  galleryStatusNeedsReview?: boolean;
   objectKey?: string;
   contentType?: string;
   width?: number;
@@ -17,6 +21,13 @@ export interface AdminGalleryPhoto extends GalleryItem {
   createdAt?: string;
   updatedAt?: string;
   publishedAt?: string;
+}
+
+export interface GalleryAlbumPhoto extends GalleryItem {
+  photoId: string;
+  caption?: string;
+  visibility: GalleryAlbumPhotoVisibility;
+  sortOrder: number;
 }
 
 export type GalleryAlbumStatus = 'draft' | 'published';
@@ -105,11 +116,23 @@ export interface GalleryAlbum {
   ownerName?: string;
   hasPassword?: boolean;
   coverPhotoId?: string | null;
-  photos: GalleryItem[];
+  photos: GalleryAlbumPhoto[];
   createdAt: string;
   updatedAt: string;
   publishedAt?: string;
 }
+
+export interface GalleryAlbumPhotoInput {
+  photoId: string;
+  caption?: string | null;
+  visibility?: GalleryAlbumPhotoVisibility | null;
+}
+
+export type GalleryAlbumMutation = Omit<Partial<GalleryAlbum>, 'photos'> & {
+  photoIds?: string[];
+  photos?: GalleryAlbumPhotoInput[];
+  albumPassword?: string | null;
+};
 
 export interface GalleryTag {
   slug: string;
@@ -129,7 +152,7 @@ export interface AdminGalleryListResponse {
 
 export interface GalleryAlbumResponse {
   album: GalleryAlbum;
-  photos: GalleryItem[];
+  photos: GalleryAlbumPhoto[];
 }
 
 export interface GalleryAlbumsResponse {
@@ -141,7 +164,7 @@ export interface AdminGalleryAlbumsResponse {
 }
 
 export interface EmbedPhotoResponse {
-  photo: GalleryItem;
+  photo: GalleryItem | GalleryAlbumPhoto;
   album?: GalleryAlbum | null;
   template: EmbedTemplate;
   formats: string[];
@@ -152,7 +175,7 @@ export interface EmbedSettingsResponse {
 }
 
 export interface EmbedGalleryResponse {
-  photos: GalleryItem[];
+  photos: Array<GalleryItem | GalleryAlbumPhoto>;
   album?: GalleryAlbum | null;
   template: EmbedTemplate;
   formats: string[];
@@ -268,10 +291,14 @@ export async function getEmbedAlbum(slug: string, opts: { count?: number; layout
   return readJson<EmbedGalleryResponse>(res);
 }
 
-export async function getEmbedPhotoSet(ids: string[], opts: { layout?: EmbedAlbumLayout } = {}): Promise<EmbedGalleryResponse> {
+export async function getEmbedPhotoSet(
+  ids: string[],
+  opts: { layout?: EmbedAlbumLayout; albumSlug?: string | null } = {},
+): Promise<EmbedGalleryResponse> {
   const params = new URLSearchParams();
   params.set('ids', ids.slice(0, 24).join(','));
   if (opts.layout) params.set('layout', opts.layout);
+  if (opts.albumSlug) params.set('album', opts.albumSlug);
   const res = await fetch(`/api/embed/photos?${params.toString()}`, {
     headers: { accept: 'application/json' },
   });
@@ -334,7 +361,7 @@ export async function listAdminGalleryAlbums(accessToken?: string): Promise<Gall
 }
 
 export async function createAdminGalleryAlbum(
-  album: Partial<GalleryAlbum> & { photoIds?: string[]; albumPassword?: string | null },
+  album: GalleryAlbumMutation,
   accessToken?: string,
 ): Promise<GalleryAlbum> {
   const res = await fetch('/api/admin/gallery/albums', {
@@ -347,7 +374,7 @@ export async function createAdminGalleryAlbum(
 
 export async function updateAdminGalleryAlbum(
   slug: string,
-  updates: Partial<GalleryAlbum> & { photoIds?: string[]; albumPassword?: string | null },
+  updates: GalleryAlbumMutation,
   accessToken?: string,
 ): Promise<GalleryAlbum> {
   const res = await fetch(`/api/admin/gallery/albums/${encodeURIComponent(slug)}`, {
@@ -499,7 +526,7 @@ export async function listAccountGalleryAlbums(accessToken: string): Promise<Gal
 }
 
 export async function createAccountGalleryAlbum(
-  album: Partial<GalleryAlbum> & { photoIds?: string[]; albumPassword?: string | null },
+  album: GalleryAlbumMutation,
   accessToken: string,
 ): Promise<GalleryAlbum> {
   const res = await fetch('/api/account/gallery/albums', {
@@ -512,7 +539,7 @@ export async function createAccountGalleryAlbum(
 
 export async function updateAccountGalleryAlbum(
   slug: string,
-  updates: Partial<GalleryAlbum> & { photoIds?: string[]; albumPassword?: string | null },
+  updates: GalleryAlbumMutation,
   accessToken: string,
 ): Promise<GalleryAlbum> {
   const res = await fetch(`/api/account/gallery/albums/${encodeURIComponent(slug)}`, {

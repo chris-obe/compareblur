@@ -4,6 +4,7 @@ import {
   cleanId,
   findPhoto,
   json,
+  legacyStatusFromGalleryStatus,
   normalizeTags,
   photoFromRow,
   type GalleryEnv,
@@ -72,16 +73,17 @@ export const onRequestPost: PagesFunction<Env> = async ({ env, request }) => {
 
   await env.GALLERY_DB.prepare(
     `INSERT INTO gallery_photos (
-      id, title, author, status, object_key, content_type, width, height,
+      id, title, author, status, gallery_status, gallery_status_review_required, object_key, content_type, width, height,
       format_id, camera, camera_catalog_id, lens, lens_catalog_id, focal, aperture,
       subject_preset, subject_width_m, shutter_speed, iso, captured_at,
       tags_json, metadata_source_json, submitted_by, notes, created_at, updated_at, published_at
-    ) VALUES (?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+    ) VALUES (?, ?, ?, ?, 'not_submitted', 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
   )
     .bind(
       id,
       title,
       String(form.get('author') ?? '').trim(),
+      legacyStatusFromGalleryStatus('not_submitted'),
       objectKey,
       file.type || 'application/octet-stream',
       numberOrNull(form.get('width')),

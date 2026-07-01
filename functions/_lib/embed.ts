@@ -1,6 +1,7 @@
 import { cleanId, photoFromRow, type GalleryEnv, type GalleryRow } from './gallery';
 
 export type GalleryAlbumStatus = 'draft' | 'published';
+export type GalleryAlbumPhotoVisibility = 'visible' | 'hidden';
 export type EmbedTheme = 'light' | 'dark' | 'system';
 export type EmbedDensity = 'compact' | 'comfortable';
 export type EmbedFrameStyle = 'minimal' | 'technical' | 'editorial';
@@ -110,6 +111,7 @@ export interface GalleryAlbumPhotoRow {
   photo_id: string;
   sort_order: number;
   caption: string | null;
+  visibility: GalleryAlbumPhotoVisibility | null;
   created_at: string;
   updated_at: string;
 }
@@ -117,7 +119,16 @@ export interface GalleryAlbumPhotoRow {
 export interface GalleryAlbumPhotoInput {
   photoId: string;
   caption?: string | null;
+  visibility?: GalleryAlbumPhotoVisibility | null;
 }
+
+interface JoinedAlbumPhotoRow extends GalleryRow {
+  album_caption: string | null;
+  album_visibility: string | null;
+  album_sort_order: number | null;
+}
+
+const ALBUM_IMAGE_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
 
 export const DEFAULT_EMBED_TEMPLATE: EmbedTemplate = {
   theme: 'light',
@@ -204,7 +215,11 @@ export function cleanAlbumSlug(value: unknown, fallbackTitle = ''): string {
   return cleanId(raw);
 }
 
-export function albumFromRow(row: GalleryAlbumRow, photos: unknown[] = []) {
+export function albumFromRow(
+  row: GalleryAlbumRow,
+  photos: unknown[] = [],
+  options: { coverPhotoId?: string | null } = {},
+) {
   return {
     slug: row.slug,
     title: row.title,
@@ -213,7 +228,7 @@ export function albumFromRow(row: GalleryAlbumRow, photos: unknown[] = []) {
     ownerSub: row.owner_sub ?? undefined,
     ownerName: row.owner_name ?? undefined,
     hasPassword: !!row.password_hash,
-    coverPhotoId: row.cover_photo_id ?? undefined,
+    coverPhotoId: options.coverPhotoId ?? row.cover_photo_id ?? undefined,
     photos,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -345,62 +360,29 @@ export async function publicAlbumWithPhotos(env: GalleryEnv, slug: string, passw
     .first<GalleryAlbumRow>();
   if (!row) return null;
   if (row.password_hash && !(await verifyAlbumPassword(row, password))) return null;
-  const photos = await albumPhotos(env, slug, false);
-  return albumFromRow(row, photos);
+  const photos = await albumPhotos(env, row, { publicAlbum: true });
+  const coverPhotoId = photos.find((photo) => photo.id === row.cover_photo_id)?.id ?? photos[0]?.id ?? null;
+  return albumFromRow(row, photos, { coverPhotoId });
 }
 
 export async function adminAlbumWithPhotos(env: GalleryEnv, row: GalleryAlbumRow) {
-  const photos = await albumPhotos(env, row.slug, true);
-  return albumFromRow(row, photos);
+  const photos = await albumPhotos(env, row, { admin: true });
+  return albumFromRow(row, photos, { coverPhotoId: row.cover_photo_id ?? photos[0]?.id ?? null });
 }
 
-export async function albumContainsApprovedPhoto(env: GalleryEnv, slug: string, photoId: string): Promise<boolean> {
+export async function albumContainsVisiblePhoto(env: GalleryEnv, slug: string, photoId: string): Promise<boolean> {
   const row = await env.GALLERY_DB.prepare(
-    `SELECT gallery_photos.id
+    `SELECT gallery_album_photos.photo_id AS id
      FROM gallery_album_photos
-     JOIN gallery_photos ON gallery_photos.id = gallery_album_photos.photo_id
      JOIN gallery_albums ON gallery_albums.slug = gallery_album_photos.album_slug
      WHERE gallery_album_photos.album_slug = ? AND gallery_album_photos.photo_id = ?
-       AND gallery_photos.status = 'approved' AND gallery_albums.status = 'published'`,
+       AND gallery_albums.status = 'published'
+       AND gallery_albums.password_hash IS NULL
+       AND gallery_album_photos.visibility = 'visible'`,
   )
     .bind(slug, photoId)
     .first<{ id: string }>();
   return !!row;
-}
-
-export async function publishAlbumPhotos(
-  env: GalleryEnv,
-  slug: string,
-  options: { ownerSub?: string } = {},
-) {
-  const now = new Date().toISOString();
-  const query = options.ownerSub
-    ? `UPDATE gallery_photos
-       SET status = 'approved',
-           updated_at = ?,
-           published_at = COALESCE(published_at, ?)
-       WHERE submitted_by = ?
-         AND id IN (
-           SELECT photo_id
-           FROM gallery_album_photos
-           WHERE album_slug = ?
-         )`
-    : `UPDATE gallery_photos
-       SET status = 'approved',
-           updated_at = ?,
-           published_at = COALESCE(published_at, ?)
-       WHERE id IN (
-         SELECT photo_id
-         FROM gallery_album_photos
-         WHERE album_slug = ?
-       )`;
-
-  const statement = env.GALLERY_DB.prepare(query);
-  if (options.ownerSub) {
-    await statement.bind(now, now, options.ownerSub, slug).run();
-    return;
-  }
-  await statement.bind(now, now, slug).run();
 }
 
 export async function replaceAlbumPhotos(
@@ -411,7 +393,11 @@ export async function replaceAlbumPhotos(
 ) {
   const now = new Date().toISOString();
   const normalized = photos
-    .map((photo) => ({ photoId: String(photo.photoId).trim(), caption: stringOrNull(photo.caption) }))
+    .map((photo) => ({
+      photoId: String(photo.photoId).trim(),
+      caption: stringOrNull(photo.caption),
+      visibility: albumPhotoVisibilityValue(photo.visibility),
+    }))
     .filter((photo) => photo.photoId);
 
   await env.GALLERY_DB.prepare('DELETE FROM gallery_album_photos WHERE album_slug = ?').bind(slug).run();
@@ -420,16 +406,17 @@ export async function replaceAlbumPhotos(
     const photo = normalized[index];
     const query = options.approvedOnly === false && options.ownerSub
       ? 'SELECT id FROM gallery_photos WHERE id = ? AND submitted_by = ?'
-      : 'SELECT id FROM gallery_photos WHERE id = ? AND status = ?';
-    const match = await env.GALLERY_DB.prepare(query)
-      .bind(photo.photoId, options.approvedOnly === false && options.ownerSub ? options.ownerSub : 'approved')
-      .first<{ id: string }>();
+      : "SELECT id FROM gallery_photos WHERE id = ? AND gallery_status = 'approved'";
+    const statement = env.GALLERY_DB.prepare(query);
+    const match = options.approvedOnly === false && options.ownerSub
+      ? await statement.bind(photo.photoId, options.ownerSub).first<{ id: string }>()
+      : await statement.bind(photo.photoId).first<{ id: string }>();
     if (!match) continue;
     await env.GALLERY_DB.prepare(
-      `INSERT INTO gallery_album_photos (album_slug, photo_id, sort_order, caption, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO gallery_album_photos (album_slug, photo_id, sort_order, caption, visibility, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
     )
-      .bind(slug, photo.photoId, index, photo.caption, now, now)
+      .bind(slug, photo.photoId, index, photo.caption, photo.visibility, now, now)
       .run();
   }
 }
@@ -440,12 +427,15 @@ export async function ownedAlbumWithPhotos(env: GalleryEnv, slug: string, ownerS
     .first<GalleryAlbumRow>();
   if (!row) return null;
   const photos = await ownedAlbumPhotos(env, slug, ownerSub);
-  return albumFromRow(row, photos);
+  return albumFromRow(row, photos, { coverPhotoId: row.cover_photo_id ?? photos[0]?.id ?? null });
 }
 
 export async function ownedAlbumPhotos(env: GalleryEnv, slug: string, ownerSub: string) {
   const rows = await env.GALLERY_DB.prepare(
-    `SELECT gallery_photos.*
+    `SELECT gallery_photos.*,
+            gallery_album_photos.caption AS album_caption,
+            gallery_album_photos.visibility AS album_visibility,
+            gallery_album_photos.sort_order AS album_sort_order
      FROM gallery_album_photos
      JOIN gallery_photos ON gallery_photos.id = gallery_album_photos.photo_id
      WHERE gallery_album_photos.album_slug = ?
@@ -453,8 +443,8 @@ export async function ownedAlbumPhotos(env: GalleryEnv, slug: string, ownerSub: 
      ORDER BY gallery_album_photos.sort_order ASC, gallery_album_photos.created_at ASC`,
   )
     .bind(slug, ownerSub)
-    .all<GalleryRow>();
-  return (rows.results ?? []).map((photo) => photoFromRow(photo, true));
+    .all<JoinedAlbumPhotoRow>();
+  return (rows.results ?? []).map((photo) => albumPhotoFromJoinedRow(photo, { admin: true }));
 }
 
 export function normalizePhotoInputs(value: unknown): GalleryAlbumPhotoInput[] {
@@ -466,6 +456,7 @@ export function normalizePhotoInputs(value: unknown): GalleryAlbumPhotoInput[] {
         return {
           photoId: String((item as { photoId: unknown }).photoId),
           caption: typeof (item as { caption?: unknown }).caption === 'string' ? (item as { caption: string }).caption : null,
+          visibility: albumPhotoVisibilityValue((item as { visibility?: unknown }).visibility),
         };
       }
       return null;
@@ -497,18 +488,85 @@ export async function verifyAlbumPassword(row: Pick<GalleryAlbumRow, 'password_h
   return (await sha256(`${row.password_salt}:${trimmed}`)) === row.password_hash;
 }
 
-async function albumPhotos(env: GalleryEnv, slug: string, admin: boolean) {
+async function albumPhotos(
+  env: GalleryEnv,
+  album: GalleryAlbumRow,
+  options: { admin?: boolean; publicAlbum?: boolean } = {},
+) {
+  const admin = options.admin === true;
   const rows = await env.GALLERY_DB.prepare(
-    `SELECT gallery_photos.*
+    `SELECT gallery_photos.*,
+            gallery_album_photos.caption AS album_caption,
+            gallery_album_photos.visibility AS album_visibility,
+            gallery_album_photos.sort_order AS album_sort_order
      FROM gallery_album_photos
      JOIN gallery_photos ON gallery_photos.id = gallery_album_photos.photo_id
      WHERE gallery_album_photos.album_slug = ?
-       ${admin ? '' : "AND gallery_photos.status = 'approved'"}
+       ${admin ? '' : "AND gallery_album_photos.visibility = 'visible'"}
      ORDER BY gallery_album_photos.sort_order ASC, gallery_album_photos.created_at ASC`,
   )
-    .bind(slug)
-    .all<GalleryRow>();
-  return (rows.results ?? []).map((photo) => photoFromRow(photo, admin));
+    .bind(album.slug)
+    .all<JoinedAlbumPhotoRow>();
+  const accessToken = album.password_hash ? await albumAccessToken(album) : null;
+  return (rows.results ?? []).map((photo) =>
+    albumPhotoFromJoinedRow(photo, {
+      admin,
+      album,
+      accessToken,
+      publicAlbum: options.publicAlbum === true,
+    }),
+  );
+}
+
+export async function albumAccessToken(row: Pick<GalleryAlbumRow, 'slug' | 'password_hash'>) {
+  if (!row.password_hash) return null;
+  const expiresAt = Date.now() + ALBUM_IMAGE_TOKEN_TTL_MS;
+  const signature = await sha256(`${row.slug}:${expiresAt}:${row.password_hash}`);
+  return `${expiresAt}.${signature}`;
+}
+
+export async function verifyAlbumAccessToken(
+  row: Pick<GalleryAlbumRow, 'slug' | 'password_hash'>,
+  token?: string | null,
+) {
+  if (!row.password_hash) return true;
+  if (!token) return false;
+  const [expiresAtRaw, signature] = token.split('.', 2);
+  const expiresAt = Number(expiresAtRaw);
+  if (!Number.isFinite(expiresAt) || !signature || expiresAt < Date.now()) return false;
+  const expected = await sha256(`${row.slug}:${expiresAt}:${row.password_hash}`);
+  return expected === signature;
+}
+
+function albumPhotoFromJoinedRow(
+  row: JoinedAlbumPhotoRow,
+  options: {
+    admin?: boolean;
+    album?: Pick<GalleryAlbumRow, 'slug' | 'password_hash'>;
+    accessToken?: string | null;
+    publicAlbum?: boolean;
+  } = {},
+) {
+  const admin = options.admin === true;
+  const src = options.publicAlbum && options.album
+    ? albumPhotoSrc(options.album.slug, row.id, options.accessToken)
+    : undefined;
+  return {
+    ...photoFromRow(row, admin, undefined, src ? { src } : {}),
+    photoId: row.id,
+    caption: row.album_caption ?? undefined,
+    visibility: albumPhotoVisibilityValue(row.album_visibility),
+    sortOrder: row.album_sort_order ?? 0,
+  };
+}
+
+function albumPhotoSrc(albumSlug: string, photoId: string, accessToken?: string | null) {
+  const params = accessToken ? `?token=${encodeURIComponent(accessToken)}` : '';
+  return `/api/gallery/albums/${encodeURIComponent(albumSlug)}/photos/${encodeURIComponent(photoId)}/image${params}`;
+}
+
+function albumPhotoVisibilityValue(value: unknown): GalleryAlbumPhotoVisibility {
+  return value === 'hidden' ? 'hidden' : 'visible';
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
