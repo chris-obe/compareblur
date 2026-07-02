@@ -22,6 +22,9 @@ export function ComparePage() {
 
       {/* Main: framing controls + the chart filling the rest */}
       <div className="order-1 flex min-w-0 flex-1 flex-col gap-4 p-4 lg:order-2 lg:p-6">
+        <p className="text-sm text-muted">
+          Compare shows how each camera/lens frames the same subject, then how blur changes as the background moves farther away.
+        </p>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="min-w-0 flex-1">
             <SubjectControl

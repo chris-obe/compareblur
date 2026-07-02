@@ -5,6 +5,7 @@ import { systemLabel, useCompare, type CompareSystem } from '../../store/Compare
 import { DashSwatch } from './BlurChart';
 import { NumberField } from '../ui/NumberField';
 import { Dropdown } from '../ui/Dropdown';
+import { Tooltip } from '../ui/Tooltip';
 
 const slotField =
   'h-8 w-16 border border-line bg-transparent px-1.5 text-xs outline-none focus:border-line-strong';
@@ -53,8 +54,12 @@ function SystemRow({
 
   return (
     <div className="border-b border-line px-3 py-2 last:border-b-0">
-      <div className="grid grid-cols-[1.7rem_minmax(0,1fr)_auto] items-center gap-2">
-        <DashSwatch color={color.stroke} dash={style.dash} />
+      <div className="grid grid-cols-[3.5rem_minmax(0,1fr)_auto] items-center gap-2">
+        <StyleMenu
+          colorId={color.id}
+          styleId={style.id}
+          onChange={(lineColor, lineStyle) => onUpdate({ lineColor, lineStyle })}
+        />
         <div className="min-w-0">
           <div className="truncate text-xs font-bold">{systemLabel(system)}</div>
           <div className="label mt-0.5 truncate">{detail}</div>
@@ -78,12 +83,6 @@ function SystemRow({
           <NumberField value={system.aperture} onCommit={(n) => onUpdate({ aperture: n })} min={0.7} step={0.1} className={slotField} />
         </label>
       </div>
-
-      <StyleMenu
-        colorId={color.id}
-        styleId={style.id}
-        onChange={(lineColor, lineStyle) => onUpdate({ lineColor, lineStyle })}
-      />
     </div>
   );
 }
@@ -101,11 +100,11 @@ function StyleMenu({
   const style = compareLineStyle(styleId);
 
   return (
-    <div className="mt-2">
-      <Dropdown
-        align="left"
-        className="w-64 p-2"
-        trigger={
+    <Dropdown
+      align="left"
+      className="w-64 p-2"
+      trigger={
+        <Tooltip tip="compareLineStyle" side="bottom" align="start">
           <div
             className="flex h-8 w-14 items-center justify-center border border-line transition-colors hover:border-line-strong"
             title={`${color.label} · ${style.label}`}
@@ -114,34 +113,34 @@ function StyleMenu({
           >
             <DashSwatch color="var(--bg)" dash={style.dash} />
           </div>
-        }
-      >
-        <div className="grid grid-cols-5 gap-1">
-          {COMPARE_LINE_COLORS.flatMap((colorOption) =>
-            COMPARE_LINE_STYLES.map((styleOption) => {
-              const selected = colorOption.id === colorId && styleOption.id === styleId;
-              return (
-                <button
-                  key={`${colorOption.id}-${styleOption.id}`}
-                  type="button"
-                  onClick={() => onChange(colorOption.id, styleOption.id)}
-                  title={`${colorOption.label} · ${styleOption.label}`}
-                  aria-label={`${colorOption.label} ${styleOption.label}`}
-                  aria-pressed={selected}
-                  className={[
-                    'flex h-8 items-center justify-center border transition-colors hover:border-line-strong',
-                    selected ? 'border-fg' : 'border-line',
-                  ].join(' ')}
-                  style={{ background: colorOption.stroke }}
-                >
-                  <DashSwatch color="var(--bg)" dash={styleOption.dash} />
-                </button>
-              );
-            }),
-          )}
-        </div>
-      </Dropdown>
-    </div>
+        </Tooltip>
+      }
+    >
+      <div className="grid grid-cols-5 gap-1">
+        {COMPARE_LINE_COLORS.flatMap((colorOption) =>
+          COMPARE_LINE_STYLES.map((styleOption) => {
+            const selected = colorOption.id === colorId && styleOption.id === styleId;
+            return (
+              <button
+                key={`${colorOption.id}-${styleOption.id}`}
+                type="button"
+                onClick={() => onChange(colorOption.id, styleOption.id)}
+                title={`${colorOption.label} · ${styleOption.label}`}
+                aria-label={`${colorOption.label} ${styleOption.label}`}
+                aria-pressed={selected}
+                className={[
+                  'flex h-8 items-center justify-center border transition-colors hover:border-line-strong',
+                  selected ? 'border-fg' : 'border-line',
+                ].join(' ')}
+                style={{ background: colorOption.stroke }}
+              >
+                <DashSwatch color="var(--bg)" dash={styleOption.dash} />
+              </button>
+            );
+          }),
+        )}
+      </div>
+    </Dropdown>
   );
 }
 

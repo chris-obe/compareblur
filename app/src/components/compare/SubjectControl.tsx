@@ -172,14 +172,18 @@ export function SubjectControl({ width, onChange, focusM, onFocusChange }: Props
         </Tooltip>
       ) : (
         <div className="flex h-9 min-w-0 flex-1 items-center gap-3 overflow-hidden border border-line px-2.5 text-xs">
-          <span className="min-w-0 truncate">
-            <span className="label mr-1">Stand</span>
-            <span className="font-bold">per system</span>
-          </span>
-          <span className="hidden min-w-0 truncate md:inline">
-            <span className="label mr-1">BG</span>
-            <span className="font-bold">+0.1-200m</span>
-          </span>
+          <Tooltip tip="compareStandSummary" side="bottom" align="start">
+            <span className="min-w-0 truncate">
+              <span className="label mr-1">Stand</span>
+              <span className="font-bold">per system</span>
+            </span>
+          </Tooltip>
+          <Tooltip tip="compareBgAxisSummary" side="bottom" align="start">
+            <span className="hidden min-w-0 truncate md:inline">
+              <span className="label mr-1">BG</span>
+              <span className="font-bold">+0.1-200m</span>
+            </span>
+          </Tooltip>
         </div>
       )}
     </div>

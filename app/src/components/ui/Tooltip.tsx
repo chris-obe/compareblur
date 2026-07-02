@@ -6,15 +6,16 @@ interface TooltipProps {
   content?: ReactNode;
   side?: 'top' | 'bottom';
   align?: 'start' | 'center' | 'end';
+  className?: string;
   children: ReactNode;
 }
 
-export function Tooltip({ tip, content, side = 'top', align = 'center', children }: TooltipProps) {
+export function Tooltip({ tip, content, side = 'top', align = 'center', className = '', children }: TooltipProps) {
   const body = content ?? (tip ? tooltip(tip) : null);
   if (!body) return <>{children}</>;
 
   return (
-    <span className="group/tooltip relative inline-flex">
+    <span className={['group/tooltip relative inline-flex', className].join(' ')}>
       {children}
       <span
         role="tooltip"

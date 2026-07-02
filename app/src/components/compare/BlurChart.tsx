@@ -9,6 +9,7 @@ import { Check, ChevronDown, Layers, MousePointer2, Ruler } from 'lucide-react';
 import { compareLineColor, compareLineStyle } from '../../lib/compareStyles';
 import { blurFraction, fieldOfView, focusDistanceForFraming } from '../../lib/engine';
 import { systemLabel, systemOpticsLabel, systemSourceLabel, type CompareSystem } from '../../store/CompareProvider';
+import type { TooltipKey } from '../../lib/tooltips';
 import { Dropdown } from '../ui/Dropdown';
 import { Tooltip } from '../ui/Tooltip';
 
@@ -126,6 +127,16 @@ function Inner({
           { width, height },
           showContext,
         );
+  const cursorPlotX = cursor == null ? null : xScale(cursor);
+  const cursorScreenX = cursorPlotX == null ? null : MARGIN.left + cursorPlotX;
+  const fixedReadoutStyle =
+    cursorScreenX == null
+      ? undefined
+      : cursorScreenX < width / 2
+        ? { left: cursorScreenX + 12, right: 12 }
+        : { left: 12, right: width - cursorScreenX + 12 };
+  const cursorLabelOnRight =
+    cursorPlotX == null ? true : cursorPlotX < 128 ? true : cursorPlotX > innerW - 148 ? false : cursorPlotX > innerW / 2;
 
   return (
     <div className="relative">
@@ -196,6 +207,18 @@ function Inner({
                 strokeDasharray="2,3"
                 pointerEvents="none"
               />
+              <text
+                x={xScale(cursor) + (cursorLabelOnRight ? 8 : -8)}
+                y={-3}
+                fill="var(--fg)"
+                fontSize={10}
+                fontWeight={700}
+                letterSpacing={0.2}
+                textAnchor={cursorLabelOnRight ? 'start' : 'end'}
+                pointerEvents="none"
+              >
+                background position
+              </text>
               {series.map((s) => {
                 const v = blurAt(s.points, cursor);
                 if (v == null) return null;
@@ -230,7 +253,13 @@ function Inner({
 
       {/* ranked readout */}
       {readoutMode === 'fixed' && (
-        <div className="pointer-events-none absolute left-12 top-2 max-w-[calc(100%-4rem)] space-y-1">
+        <div
+          className={[
+            'pointer-events-none absolute top-2 space-y-1',
+            cursor != null ? 'border border-line bg-bg/90 px-2 py-1' : 'left-12',
+          ].join(' ')}
+          style={fixedReadoutStyle}
+        >
           {cursor != null ? (
             <>
               <div className="label">background +{formatDistance(cursor)} behind subject</div>
@@ -513,22 +542,6 @@ export function BlurChart({
   );
 }
 
-function DepthLegend({ compact = false }: { compact?: boolean }) {
-  return (
-    <div className={['flex max-w-full flex-wrap items-center gap-x-3 gap-y-1', compact ? '' : 'mt-2'].join(' ')}>
-      {DEPTH_BANDS.map((band) => (
-        <span key={band.id} className="inline-flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-muted">
-          <span
-            className="h-2 w-4 border border-line"
-            style={{ backgroundColor: 'var(--fg)', opacity: band.opacity * 4 }}
-          />
-          <span>{band.label}</span>
-        </span>
-      ))}
-    </div>
-  );
-}
-
 function ReadoutMenu({
   series,
   readoutMode,
@@ -547,7 +560,7 @@ function ReadoutMenu({
   onToggle: (id: string) => void;
 }) {
   const selectedSet = new Set(selectedIds);
-  const triggerLabel = readoutMode === 'fixed' ? 'Fixed' : allSelected ? `Track ${series.length}` : `Track ${selectedIds.length}`;
+  const triggerLabel = readoutMode === 'fixed' ? 'List' : allSelected ? 'Track all' : `Track ${selectedIds.length}`;
 
   return (
     <Dropdown
@@ -562,28 +575,24 @@ function ReadoutMenu({
     >
       {({ close }) => (
         <div className="py-1">
-          <div className="label px-3 py-1.5">Readout</div>
+          <div className="label px-3 py-1.5">Cursor</div>
           {(['fixed', 'tracked'] as const).map((mode) => (
-            <button
-              key={mode}
-              type="button"
-              onClick={() => {
-                onReadoutMode(mode);
-                if (mode === 'fixed') close();
-              }}
-              className="flex w-full items-start gap-2 px-3 py-2 text-left text-xs hover:bg-faint"
-              aria-pressed={readoutMode === mode}
-            >
-              <span className="mt-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center">
-                {readoutMode === mode && <Check size={12} strokeWidth={2.4} />}
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block font-bold">{mode === 'fixed' ? 'Fixed list' : 'Track lines'}</span>
-                <span className="label block normal-case tracking-normal">
-                  {mode === 'fixed' ? 'One ranked hover list.' : 'Labels follow selected curves.'}
+            <Tooltip key={mode} tip={mode === 'fixed' ? 'compareReadoutFixed' : 'compareReadoutTracked'} side="bottom" align="start" className="block">
+              <button
+                type="button"
+                onClick={() => {
+                  onReadoutMode(mode);
+                  if (mode === 'fixed') close();
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-faint"
+                aria-pressed={readoutMode === mode}
+              >
+                <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center">
+                  {readoutMode === mode && <Check size={12} strokeWidth={2.4} />}
                 </span>
-              </span>
-            </button>
+                <span className="min-w-0 flex-1 truncate font-bold">{mode === 'fixed' ? 'List' : 'Track lines'}</span>
+              </button>
+            </Tooltip>
           ))}
           {readoutMode === 'tracked' && series.length > 0 && (
             <div className="mt-1 border-t border-line py-1">
@@ -660,19 +669,14 @@ function LayerMenu({
           active={showDepthBands}
           icon={<Layers size={14} strokeWidth={1.6} />}
           label="Depth bands"
-          detail="Room-to-open distance shading."
+          tip="compareDepthBands"
           onClick={onToggleDepth}
         />
-        {showDepthBands && (
-          <div className="border-b border-line px-3 pb-2">
-            <DepthLegend compact />
-          </div>
-        )}
         <ToggleMenuRow
           active={showContext}
           icon={<Ruler size={14} strokeWidth={1.6} />}
           label="FOV / stand"
-          detail="Standing distance and horizontal view."
+          tip="compareFovStandLayer"
           onClick={onToggleContext}
         />
       </div>
@@ -699,26 +703,25 @@ function ToggleMenuRow({
   active,
   icon,
   label,
-  detail,
+  tip,
   onClick,
 }: {
   active: boolean;
   icon: ReactNode;
   label: string;
-  detail: string;
+  tip: TooltipKey;
   onClick: () => void;
 }) {
   return (
-    <button type="button" onClick={onClick} className="flex w-full items-start gap-2 px-3 py-2 text-left text-xs hover:bg-faint" aria-pressed={active}>
-      <span className="mt-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center">
-        {active && <Check size={12} strokeWidth={2.4} />}
-      </span>
-      <span className="mt-0.5 shrink-0 text-muted">{icon}</span>
-      <span className="min-w-0 flex-1">
-        <span className="block font-bold">{label}</span>
-        <span className="label block normal-case tracking-normal">{detail}</span>
-      </span>
-    </button>
+    <Tooltip tip={tip} side="bottom" align="start" className="block">
+      <button type="button" onClick={onClick} className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-faint" aria-pressed={active}>
+        <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center">
+          {active && <Check size={12} strokeWidth={2.4} />}
+        </span>
+        <span className="shrink-0 text-muted">{icon}</span>
+        <span className="min-w-0 flex-1 truncate font-bold">{label}</span>
+      </button>
+    </Tooltip>
   );
 }
 
