@@ -128,15 +128,9 @@ function Inner({
           showContext,
         );
   const cursorPlotX = cursor == null ? null : xScale(cursor);
-  const cursorScreenX = cursorPlotX == null ? null : MARGIN.left + cursorPlotX;
-  const fixedReadoutStyle =
-    cursorScreenX == null
-      ? undefined
-      : cursorScreenX < width / 2
-        ? { left: cursorScreenX + 12, right: 12 }
-        : { left: 12, right: width - cursorScreenX + 12 };
   const cursorLabelOnRight =
     cursorPlotX == null ? true : cursorPlotX < 128 ? true : cursorPlotX > innerW - 148 ? false : cursorPlotX > innerW / 2;
+  const summaryReadoutTop = showDepthBands ? MARGIN.top + 24 : 8;
 
   return (
     <div className="relative">
@@ -255,10 +249,10 @@ function Inner({
       {readoutMode === 'fixed' && (
         <div
           className={[
-            'pointer-events-none absolute top-2 space-y-1',
-            cursor != null ? 'border border-line bg-bg/90 px-2 py-1' : 'left-12',
+            'pointer-events-none absolute left-12 right-4 space-y-1',
+            cursor != null ? 'border border-line bg-bg/90 px-2 py-1' : '',
           ].join(' ')}
-          style={fixedReadoutStyle}
+          style={{ top: summaryReadoutTop }}
         >
           {cursor != null ? (
             <>
@@ -564,7 +558,7 @@ function ReadoutMenu({
   onToggle: (id: string) => void;
 }) {
   const selectedSet = new Set(selectedIds);
-  const triggerLabel = readoutMode === 'fixed' ? 'List' : allSelected ? 'Track all' : `Track ${selectedIds.length}`;
+  const triggerLabel = readoutMode === 'fixed' ? 'Summary' : allSelected ? 'Follow all' : `Follow ${selectedIds.length}`;
 
   return (
     <Dropdown
@@ -594,7 +588,7 @@ function ReadoutMenu({
                 <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center">
                   {readoutMode === mode && <Check size={12} strokeWidth={2.4} />}
                 </span>
-                <span className="min-w-0 flex-1 truncate font-bold">{mode === 'fixed' ? 'List' : 'Track lines'}</span>
+                <span className="min-w-0 flex-1 truncate font-bold">{mode === 'fixed' ? 'Summary' : 'Follow line'}</span>
               </button>
             </Tooltip>
           ))}
