@@ -1,47 +1,35 @@
+import { useAuth0 } from '@auth0/auth0-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { categoryForFormat, type CategoryId } from '../../lib/categories';
-import type { GalleryItem, ViewEntry } from '../../lib/types';
-import { ApiError, getGalleryAlbum, type GalleryAlbum } from '../../lib/galleryApi';
-import { resolveGalleryFormat } from '../../lib/galleryFormat';
+import { userTokenParams } from '../../auth/config';
+import {
+  ApiError,
+  getAccountGalleryAlbum,
+  getGalleryAlbum,
+  getPublicEmbedTemplate,
+  updateAccountGalleryAlbum,
+  type EmbedTemplate,
+  type GalleryAlbum,
+  type GalleryAlbumPhotoVisibility,
+  type GalleryAlbumStatus,
+} from '../../lib/galleryApi';
+import { useClearCachedAccountImagesOnOwnerChange } from '../../lib/accountImageCache';
 import { suggestGalleryMetadata } from '../../lib/galleryMetadata';
+import type { GalleryItem, ViewEntry } from '../../lib/types';
 import { usePublicGalleryPhotos } from '../../hooks/usePublicGalleryPhotos';
 import { useCatalog } from '../../store/CatalogProvider';
 import { useReactions } from '../../store/ReactionsProvider';
+import { CachedAccountImage } from './CachedAccountImage';
+import { EmbedCodeDialog } from '../embed/EmbedCodeDialog';
+import { PhotoLightbox } from '../lightbox/PhotoLightbox';
 import { Button } from '../ui/Button';
-import { FilterBar } from './FilterBar';
+import { GallerySurface } from './GallerySurface';
+import { LightboxInfo } from './LightboxInfo';
 import { UploadBox } from './UploadBox';
-import { GalleryGrid } from './GalleryGrid';
-import { Lightbox } from './Lightbox';
 
-function toEntry(item: GalleryItem): ViewEntry {
-  const { format, fallbackUsed } = resolveGalleryFormat(item.formatId);
-
-  return {
-    id: item.id,
-    title: item.title,
-    metaLine: `${item.camera} · ${item.lens}`,
-    src: item.src,
-    camera: item.camera,
-    lens: item.lens,
-    formatId: item.formatId,
-    format,
-    focal: item.focal,
-    aperture: item.aperture,
-    subjectPreset: item.subjectPreset,
-    subjectWidthM: item.subjectWidthM,
-    shutterSpeed: item.shutterSpeed,
-    iso: item.iso,
-    capturedAt: item.capturedAt,
-    guessed: fallbackUsed,
-    morph: true,
-  };
-}
-
-interface View {
-  list: ViewEntry[];
-  index: number;
-}
+type EmbedRequest =
+  | { mode: 'selection'; photoIds: string[]; albumSlug?: string; albumTitle?: string }
+  | { mode: 'album'; albumSlug: string; albumTitle: string };
 
 interface GalleryPageProps {
   albumSlug?: string;
@@ -51,54 +39,62 @@ interface GalleryPageProps {
 
 export function GalleryPage({ albumSlug, initialPhotoId, closePath }: GalleryPageProps = {}) {
   const navigate = useNavigate();
+  const { getAccessTokenSilently, isAuthenticated, user } = useAuth0();
   const { cameras, lenses } = useCatalog();
   const { registerCounts } = useReactions();
   const publicGallery = usePublicGalleryPhotos({ enabled: !albumSlug });
-  const [formats, setFormats] = useState<Set<CategoryId>>(new Set());
-  const [tags, setTags] = useState<string[]>([]);
-  const [view, setView] = useState<View | null>(null);
+  const ownerKey = user?.sub ?? null;
   const [busy, setBusy] = useState(false);
   const [items, setItems] = useState<GalleryItem[]>([]);
   const [album, setAlbum] = useState<GalleryAlbum | null>(null);
+  const [ownerAlbum, setOwnerAlbum] = useState<GalleryAlbum | null>(null);
+  const [ownerAccessToken, setOwnerAccessToken] = useState<string | null>(null);
+  const [ownerBusy, setOwnerBusy] = useState(false);
+  const [selectedPhotoIds, setSelectedPhotoIds] = useState<Set<string>>(new Set());
+  const [selectionAnchorId, setSelectionAnchorId] = useState<string | null>(null);
+  const [embedTemplate, setEmbedTemplate] = useState<EmbedTemplate | null>(null);
+  const [embedRequest, setEmbedRequest] = useState<EmbedRequest | null>(null);
   const [albumPassword, setAlbumPassword] = useState('');
   const [albumPasswordAttempt, setAlbumPasswordAttempt] = useState<{ value: string; nonce: number } | null>(null);
   const [albumPasswordRequired, setAlbumPasswordRequired] = useState(false);
   const [albumPasswordMessage, setAlbumPasswordMessage] = useState('');
+  const [uploadPreview, setUploadPreview] = useState<ViewEntry | null>(null);
   const objectUrl = useRef<string | null>(null);
-  const openedInitialId = useRef<string | null>(null);
 
-  // live registry of grid-thumbnail DOM nodes, so the lightbox can morph open
-  // from / closed to whichever image is currently selected.
-  const anchors = useRef(new Map<string, HTMLElement>());
-  const registerAnchor = useCallback((id: string, el: HTMLElement | null) => {
-    if (el) anchors.current.set(id, el);
-    else anchors.current.delete(id);
-  }, []);
-  const getAnchorRect = useCallback(
-    (id: string) => anchors.current.get(id)?.getBoundingClientRect() ?? null,
-    [],
-  );
+  useClearCachedAccountImagesOnOwnerChange(ownerKey);
+
+  const loadOwnerAlbum = useCallback(async () => {
+    if (!albumSlug || !isAuthenticated) {
+      setOwnerAlbum(null);
+      setOwnerAccessToken(null);
+      return null;
+    }
+
+    const token = await getAccessTokenSilently({ authorizationParams: userTokenParams });
+    const data = await getAccountGalleryAlbum(albumSlug, token);
+    setOwnerAccessToken(token);
+    setOwnerAlbum(data.album);
+    return data.album;
+  }, [albumSlug, getAccessTokenSilently, isAuthenticated]);
 
   useEffect(() => {
     let cancelled = false;
     if (!albumSlug) {
       setAlbum(null);
+      setItems(publicGallery.photos);
       return;
     }
+
     setAlbum(null);
     setItems([]);
-    const load = getGalleryAlbum(albumSlug, { password: albumPasswordAttempt?.value ?? undefined }).then((data) => {
-      setAlbumPasswordRequired(false);
-      setAlbumPasswordMessage('');
-      setAlbum(data.album);
-      return data.photos;
-    });
-
-    load
-      .then((photos) => {
+    getGalleryAlbum(albumSlug, { password: albumPasswordAttempt?.value ?? undefined })
+      .then((data) => {
         if (cancelled) return;
-        setItems(photos);
-        registerCounts(photos);
+        setAlbumPasswordRequired(false);
+        setAlbumPasswordMessage('');
+        setAlbum(data.album);
+        setItems(data.photos);
+        registerCounts(data.photos);
       })
       .catch((error) => {
         if (cancelled) return;
@@ -117,10 +113,11 @@ export function GalleryPage({ albumSlug, initialPhotoId, closePath }: GalleryPag
         setItems([]);
         registerCounts([]);
       });
+
     return () => {
       cancelled = true;
     };
-  }, [albumPasswordAttempt, albumSlug, registerCounts]);
+  }, [albumPasswordAttempt, albumSlug, publicGallery.photos, registerCounts]);
 
   useEffect(() => {
     if (albumSlug) return;
@@ -129,83 +126,80 @@ export function GalleryPage({ albumSlug, initialPhotoId, closePath }: GalleryPag
   }, [albumSlug, publicGallery.photos]);
 
   useEffect(() => {
+    let cancelled = false;
+    if (!albumSlug || !isAuthenticated) {
+      setOwnerAlbum(null);
+      setOwnerAccessToken(null);
+      return;
+    }
+
+    loadOwnerAlbum().catch(() => {
+      if (!cancelled) {
+        setOwnerAlbum(null);
+        setOwnerAccessToken(null);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [albumSlug, isAuthenticated, loadOwnerAlbum]);
+
+  useEffect(() => {
+    let cancelled = false;
+    getPublicEmbedTemplate()
+      .then((template) => {
+        if (!cancelled) setEmbedTemplate(template);
+      })
+      .catch(() => {
+        if (!cancelled) setEmbedTemplate(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     setAlbumPassword('');
     setAlbumPasswordAttempt(null);
     setAlbumPasswordRequired(false);
     setAlbumPasswordMessage('');
+    setSelectedPhotoIds(new Set());
+    setSelectionAnchorId(null);
   }, [albumSlug]);
 
-  useEffect(() => {
-    openedInitialId.current = null;
-  }, [initialPhotoId]);
-
-  useEffect(() => {
-    if (!initialPhotoId || openedInitialId.current === initialPhotoId || items.length === 0) return;
-    const index = items.findIndex((item) => item.id === initialPhotoId);
-    if (index < 0) return;
-    openedInitialId.current = initialPhotoId;
-    setView({ list: items.map(toEntry), index });
-  }, [initialPhotoId, items]);
-
-  const filtered = useMemo(() => {
-    return items.filter((item) => {
-      if (formats.size > 0) {
-        const cat = categoryForFormat(item.formatId);
-        if (!cat || !formats.has(cat)) return false;
-      }
-      if (tags.length > 0 && !tags.every((t) => item.tags.includes(t))) return false;
-      return true;
-    });
-  }, [formats, items, tags]);
-
-  const allTags = useMemo(() => [...new Set(items.flatMap((item) => item.tags))].sort(), [items]);
-
-  const toggleFormat = (id: CategoryId) =>
-    setFormats((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-
-  const addTag = (t: string) => setTags((prev) => (prev.includes(t) ? prev : [...prev, t]));
-  const removeTag = (t: string) => setTags((prev) => prev.filter((x) => x !== t));
-
-  const revoke = () => {
+  const revokeUploadPreview = () => {
     if (objectUrl.current) {
       URL.revokeObjectURL(objectUrl.current);
       objectUrl.current = null;
     }
   };
 
-  const closeView = () => {
-    setView(null);
-    revoke();
-    if (closePath && initialPhotoId) navigate(closePath, { replace: true });
-  };
+  useEffect(() => revokeUploadPreview, []);
 
-  const onSelectCard = (item: GalleryItem) => {
-    revoke();
-    if (albumSlug) {
-      navigate(`/g/${encodeURIComponent(albumSlug)}/photo/${encodeURIComponent(item.id)}`);
-    } else {
-      navigate(`/gallery/photo/${encodeURIComponent(item.id)}`);
-    }
-    const idx = filtered.findIndex((f) => f.id === item.id);
-    setView({ list: filtered.map(toEntry), index: Math.max(0, idx) });
-  };
+  const activeAlbum = ownerAlbum ?? album;
+  const displayItems = useMemo(() => ownerAlbum?.photos ?? items, [items, ownerAlbum]);
+  const isOwnerAlbum = !!ownerAlbum;
+  const selectedAlbumPhotos = useMemo(
+    () => (ownerAlbum?.photos ?? []).filter((photo) => selectedPhotoIds.has(photo.id)),
+    [ownerAlbum, selectedPhotoIds],
+  );
+  const selectedVisibleCount = selectedAlbumPhotos.filter((photo) => photo.visibility === 'visible').length;
+  const selectedEmbeddableCount = ownerAlbum && ownerAlbum.status === 'published' && !ownerAlbum.hasPassword
+    ? selectedVisibleCount
+    : 0;
+  const embedReady = !!embedTemplate;
 
   const onFile = async (file: File) => {
     setBusy(true);
     try {
       const metadata = await suggestGalleryMetadata(file, cameras, lenses);
-      revoke();
+      revokeUploadPreview();
       const preview = URL.createObjectURL(file);
       objectUrl.current = preview;
-      const entry: ViewEntry = {
+      setUploadPreview({
         id: 'upload',
         title: file.name,
-        metaLine: `${metadata.camera} · ${metadata.lens} · shot ƒ/${metadata.aperture}`,
+        metaLine: `${metadata.camera} · ${metadata.lens} · shot f/${metadata.aperture}`,
         src: preview,
         camera: metadata.camera,
         lens: metadata.lens,
@@ -220,28 +214,64 @@ export function GalleryPage({ albumSlug, initialPhotoId, closePath }: GalleryPag
         subjectWidthM: undefined,
         guessed: metadata.source.exif.guessedFormat && metadata.cameraConfidence === 'none',
         morph: false,
-      };
-      setView({ list: [entry], index: 0 });
+      });
     } finally {
       setBusy(false);
     }
   };
 
-  const current = view ? view.list[view.index] : null;
-  const activeId = current?.morph ? current.id : null;
-  const enableReactions = !albumSlug;
+  const updateOwnerAlbumStatus = async (status: GalleryAlbumStatus) => {
+    if (!ownerAlbum || ownerBusy) return;
+    setOwnerBusy(true);
+    try {
+      const token = ownerAccessToken ?? await getAccessTokenSilently({ authorizationParams: userTokenParams });
+      setOwnerAccessToken(token);
+      const updated = await updateAccountGalleryAlbum(ownerAlbum.slug, { status }, token);
+      setOwnerAlbum(updated);
+    } finally {
+      setOwnerBusy(false);
+    }
+  };
+
+  const updateSelectedVisibility = async (visibility: GalleryAlbumPhotoVisibility) => {
+    if (!ownerAlbum || ownerBusy || selectedPhotoIds.size === 0) return;
+    setOwnerBusy(true);
+    try {
+      const token = ownerAccessToken ?? await getAccessTokenSilently({ authorizationParams: userTokenParams });
+      setOwnerAccessToken(token);
+      const updated = await updateAccountGalleryAlbum(ownerAlbum.slug, {
+        photos: ownerAlbum.photos.map((photo) => ({
+          photoId: photo.photoId,
+          caption: photo.caption ?? null,
+          visibility: selectedPhotoIds.has(photo.id) ? visibility : photo.visibility,
+        })),
+      }, token);
+      setOwnerAlbum(updated);
+      setSelectedPhotoIds(new Set());
+      setSelectionAnchorId(null);
+    } finally {
+      setOwnerBusy(false);
+    }
+  };
+
+  const reloadOwner = async () => {
+    if (!ownerAlbum || ownerBusy) return;
+    setOwnerBusy(true);
+    try {
+      await loadOwnerAlbum();
+    } finally {
+      setOwnerBusy(false);
+    }
+  };
+
+  const canShowGallery = !albumSlug || !albumPasswordRequired || !!activeAlbum;
+  const protectedLabel = activeAlbum
+    ? activeAlbum.hasPassword ? 'Protected album' : isOwnerAlbum ? 'Your album' : 'Album'
+    : undefined;
 
   return (
-    <div className="flex flex-col">
-      {album && (
-        <div className="border-b border-line px-6 py-5">
-          <div className="label mb-2">{album.hasPassword ? 'Protected album' : 'Album'}</div>
-          <h2 className="text-2xl font-bold tracking-tight">{album.title}</h2>
-          {album.description && <p className="mt-2 max-w-2xl text-sm text-muted">{album.description}</p>}
-          {album.ownerName && <p className="mt-3 text-xs uppercase tracking-[0.16em] text-muted">Shared by {album.ownerName}</p>}
-        </div>
-      )}
-      {albumSlug && albumPasswordRequired && !album && (
+    <div className="flex min-h-0 flex-col">
+      {albumSlug && albumPasswordRequired && !activeAlbum && (
         <section className="border-b border-line px-6 py-8">
           <div className="max-w-md space-y-4">
             <div>
@@ -274,37 +304,109 @@ export function GalleryPage({ albumSlug, initialPhotoId, closePath }: GalleryPag
           </div>
         </section>
       )}
-      {albumSlug && albumPasswordRequired && !album ? null : (
-        <>
-          <FilterBar
-            formats={formats}
-            toggleFormat={toggleFormat}
-            tags={tags}
-            allTags={allTags}
-            addTag={addTag}
-            removeTag={removeTag}
-            resultCount={filtered.length}
-          />
-          <UploadBox onFile={onFile} busy={busy} />
-          <GalleryGrid
-            items={filtered}
-            onSelect={onSelectCard}
-            activeId={activeId}
-            enableReactions={enableReactions}
-            registerAnchor={registerAnchor}
-          />
 
-          {view && (
-            <Lightbox
-              list={view.list}
-              index={view.index}
-              onIndex={(i) => setView((v) => (v ? { ...v, index: i } : v))}
-              onClose={closeView}
-              enableReactions={enableReactions}
-              getAnchorRect={getAnchorRect}
+      {canShowGallery && (
+        <GallerySurface
+          items={displayItems}
+          title={activeAlbum?.title}
+          description={activeAlbum?.description}
+          ownerName={!isOwnerAlbum ? activeAlbum?.ownerName : undefined}
+          protectedLabel={protectedLabel}
+          enableReactions={!albumSlug}
+          uploadSlot={!albumSlug ? <UploadBox onFile={onFile} busy={busy} /> : undefined}
+          initialPhotoId={initialPhotoId}
+          onOpenPhoto={(item) => {
+            if (albumSlug) navigate(`/g/${encodeURIComponent(albumSlug)}/photo/${encodeURIComponent(item.id)}`);
+            else navigate(`/gallery/photo/${encodeURIComponent(item.id)}`);
+          }}
+          onClosePhoto={() => {
+            if (closePath && initialPhotoId) navigate(closePath, { replace: true });
+          }}
+          selection={isOwnerAlbum ? {
+            selectedIds: selectedPhotoIds,
+            anchorId: selectionAnchorId,
+            onChange: (ids, anchorId) => {
+              setSelectedPhotoIds(ids);
+              setSelectionAnchorId(anchorId);
+            },
+            primaryActionLabel: 'Show in public album',
+            secondaryActionLabel: 'Hide from public album',
+            selectedSecondaryCount: selectedVisibleCount,
+            selectedEmbeddableCount,
+            embedReady,
+            embedSelectedLabel: selectedPhotoIds.size > 0 && selectedEmbeddableCount === 0
+              ? 'Only visible photos in a public album can be embedded'
+              : 'Embed selected',
+            onPrimaryAction: () => void updateSelectedVisibility('visible'),
+            onSecondaryAction: () => void updateSelectedVisibility('hidden'),
+            onEmbedSelected: () => {
+              if (!ownerAlbum) return;
+              const photoIds = selectedAlbumPhotos.filter((photo) => photo.visibility === 'visible').map((photo) => photo.id);
+              if (photoIds.length === 0) return;
+              setEmbedRequest({
+                mode: 'selection',
+                photoIds,
+                albumSlug: ownerAlbum.slug,
+                albumTitle: ownerAlbum.title,
+              });
+            },
+          } : undefined}
+          ownerControls={ownerAlbum ? {
+            visibility: {
+              value: ownerAlbum.status,
+              busy: ownerBusy,
+              onChange: (status) => void updateOwnerAlbumStatus(status),
+            },
+            mode: {
+              value: 'view',
+              onView: () => undefined,
+              onEdit: () => navigate(`/albums/${encodeURIComponent(ownerAlbum.slug)}?mode=edit`),
+            },
+            canEmbedAlbum: embedReady && ownerAlbum.status === 'published' && !ownerAlbum.hasPassword,
+            embedAlbumDisabledReason: ownerAlbum.hasPassword
+              ? 'Password-protected albums are not embeddable'
+              : ownerAlbum.status === 'published'
+                ? 'Embed settings are still loading'
+                : 'Make the album public to embed it',
+            onEmbedAlbum: () => setEmbedRequest({ mode: 'album', albumSlug: ownerAlbum.slug, albumTitle: ownerAlbum.title }),
+            onReload: () => void reloadOwner(),
+            onAdd: () => navigate(`/albums/${encodeURIComponent(ownerAlbum.slug)}?mode=edit`),
+            addLabel: 'Upload',
+          } : undefined}
+          renderImage={ownerAlbum ? (item, className) => (
+            <CachedAccountImage
+              photo={item}
+              accessToken={ownerAccessToken}
+              ownerKey={ownerKey}
+              className={className}
+              alt={item.title}
             />
-          )}
-        </>
+          ) : undefined}
+        />
+      )}
+
+      {uploadPreview && (
+        <PhotoLightbox
+          entries={[uploadPreview]}
+          index={0}
+          onIndex={() => undefined}
+          onClose={() => {
+            setUploadPreview(null);
+            revokeUploadPreview();
+          }}
+          renderInfo={(entry) => <LightboxInfo entry={entry} enableReactions={false} />}
+        />
+      )}
+
+      {embedTemplate && embedRequest && (
+        <EmbedCodeDialog
+          mode={embedRequest.mode}
+          template={embedTemplate}
+          onClose={() => setEmbedRequest(null)}
+          albumSlug={embedRequest.mode === 'album' ? embedRequest.albumSlug : embedRequest.albumSlug}
+          albumTitle={embedRequest.mode === 'album' ? embedRequest.albumTitle : embedRequest.albumTitle}
+          photoIds={embedRequest.mode === 'selection' ? embedRequest.photoIds : undefined}
+        />
       )}
     </div>
   );

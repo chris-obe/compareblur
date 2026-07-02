@@ -525,6 +525,13 @@ export async function listAccountGalleryAlbums(accessToken: string): Promise<Gal
   return (await readJson<GalleryAlbumsResponse>(res)).albums;
 }
 
+export async function getAccountGalleryAlbum(slug: string, accessToken: string): Promise<GalleryAlbumResponse> {
+  const res = await fetch(`/api/account/gallery/albums/${encodeURIComponent(slug)}`, {
+    headers: authHeaders(accessToken),
+  });
+  return readJson<GalleryAlbumResponse>(res);
+}
+
 export async function createAccountGalleryAlbum(
   album: GalleryAlbumMutation,
   accessToken: string,

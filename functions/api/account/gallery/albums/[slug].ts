@@ -16,6 +16,17 @@ type Env = GalleryEnv & {
   AUTH0_DOMAIN?: string;
 };
 
+export const onRequestGet: PagesFunction<Env> = async ({ env, params, request }) => {
+  try {
+    const identity = await requireAuth0User(request, env);
+    const album = await ownedAlbumWithPhotos(env, String(params.slug), identity.sub);
+    if (!album) return json({ error: 'album not found' }, { status: 404 });
+    return json({ album, photos: album.photos });
+  } catch (error) {
+    return adminAuthError(error);
+  }
+};
+
 export const onRequestPatch: PagesFunction<Env> = async ({ env, params, request }) => {
   try {
     const identity = await requireAuth0User(request, env);

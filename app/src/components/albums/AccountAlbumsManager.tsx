@@ -17,7 +17,6 @@ import { AnimatePresence, motion, useReducedMotion, type Variants } from 'framer
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Check,
-  ChevronDown,
   ChevronRight,
   Code2,
   EllipsisVertical,
@@ -56,6 +55,7 @@ import {
   type GalleryAlbum,
   type GalleryAlbumStatus,
 } from '../../lib/galleryApi';
+import { useCachedAccountImageUrls, usePruneCachedAccountImages } from '../../lib/accountImageCache';
 import { resolveGalleryFormat } from '../../lib/galleryFormat';
 import { suggestGalleryMetadata } from '../../lib/galleryMetadata';
 import {
@@ -69,6 +69,8 @@ import type { ViewEntry } from '../../lib/types';
 import { useCatalog } from '../../store/CatalogProvider';
 import { useCompare, nextSystemId } from '../../store/CompareProvider';
 import { useKit } from '../../store/KitProvider';
+import { CachedAccountImage } from '../gallery/CachedAccountImage';
+import { GallerySurface } from '../gallery/GallerySurface';
 import { PhotoOpticsPanel } from '../gallery/PhotoOpticsPanel';
 import {
   metadataRowFromPhoto,
@@ -216,9 +218,10 @@ const DEFAULT_ALBUM_PREFS: AlbumDisplayPreferences = {
 export function AccountAlbumsManager({ mode, routeAlbumSlug }: Props) {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { getAccessTokenSilently, isAuthenticated, loginWithRedirect } = useAuth0();
+  const { getAccessTokenSilently, isAuthenticated, loginWithRedirect, user } = useAuth0();
   const { cameras, lenses } = useCatalog();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const ownerKey = user?.sub ?? null;
   const isNewRoute = mode === 'page' && routeAlbumSlug === 'new';
   const [albums, setAlbums] = useState<GalleryAlbum[]>([]);
   const [photos, setPhotos] = useState<AdminGalleryPhoto[]>([]);
@@ -273,6 +276,8 @@ export function AccountAlbumsManager({ mode, routeAlbumSlug }: Props) {
     [photos, selectedPhotoIds],
   );
   const embedReady = !!embedTemplate;
+
+  usePruneCachedAccountImages(ownerKey, photos);
 
   const getToken = async () => getAccessTokenSilently({ authorizationParams: userTokenParams });
 
@@ -587,6 +592,7 @@ export function AccountAlbumsManager({ mode, routeAlbumSlug }: Props) {
       photoDrafts={photoDrafts}
       catalog={{ cameras, lenses }}
       accessToken={accessToken}
+      ownerKey={ownerKey}
       fileInputRef={fileInputRef}
       loading={loading}
       busy={busy}
@@ -638,6 +644,7 @@ export function AccountAlbumsManager({ mode, routeAlbumSlug }: Props) {
             photoDrafts={photoDrafts}
             catalog={{ cameras, lenses }}
             accessToken={accessToken}
+            ownerKey={ownerKey}
             fileInputRef={fileInputRef}
             loading={loading}
             busy={busy}
@@ -659,8 +666,14 @@ export function AccountAlbumsManager({ mode, routeAlbumSlug }: Props) {
             saveAlbum={saveAlbum}
             submitSelectedToGallery={submitSelectedToGallery}
             withdrawSelectedFromGallery={withdrawSelectedFromGallery}
+            publishOne={publishOne}
             patchAlbum={patchAlbum}
             onEmbedSelected={openSelectionEmbed}
+            onEmbedPhoto={(photo, albumSlug) => setEmbedRequest({
+              mode: 'photo',
+              photo: { id: photo.id, title: photo.title },
+              albumSlug,
+            })}
             onEmbedAlbum={openAlbumEmbed}
             goToAlbums={() => navigate('/albums')}
             openAlbum={(album) => navigate(`/albums/${encodeURIComponent(album.slug)}`)}
@@ -682,7 +695,7 @@ export function AccountAlbumsManager({ mode, routeAlbumSlug }: Props) {
           onIndex={(nextIndex) => setViewPhotoId(lightboxPhotos[nextIndex]?.id ?? null)}
           onClose={() => setViewPhotoId(null)}
           renderImage={(photo, className) => (
-            <AccountPhotoImage photo={photo} accessToken={accessToken} className={className} />
+            <AccountPhotoImage photo={photo} accessToken={accessToken} ownerKey={ownerKey} className={className} />
           )}
           renderInfo={(photo) => (
             <AccountLightboxInfo
@@ -734,6 +747,7 @@ function AlbumBuilder({
   photoDrafts,
   catalog,
   accessToken,
+  ownerKey,
   fileInputRef,
   loading,
   busy,
@@ -763,6 +777,7 @@ function AlbumBuilder({
   photoDrafts: Record<string, PhotoDraft>;
   catalog: PhotoMetadataCatalog;
   accessToken: string | null;
+  ownerKey: string | null;
   fileInputRef: RefObject<HTMLInputElement>;
   loading: boolean;
   busy: boolean;
@@ -823,6 +838,7 @@ function AlbumBuilder({
           photoDrafts={photoDrafts}
           catalog={catalog}
           accessToken={accessToken}
+          ownerKey={ownerKey}
           fileInputRef={fileInputRef}
           loading={loading}
           busy={busy}
@@ -901,6 +917,7 @@ function AlbumEditWorkspace({
   photoDrafts,
   catalog,
   accessToken,
+  ownerKey,
   fileInputRef,
   loading,
   busy,
@@ -928,6 +945,7 @@ function AlbumEditWorkspace({
   photoDrafts: Record<string, PhotoDraft>;
   catalog: PhotoMetadataCatalog;
   accessToken: string | null;
+  ownerKey: string | null;
   fileInputRef: RefObject<HTMLInputElement>;
   loading: boolean;
   busy: boolean;
@@ -955,7 +973,7 @@ function AlbumEditWorkspace({
   const allAlbumPhotosSelected = orderedPhotoIds.length > 0 && orderedPhotoIds.every((id) => selectedPhotoIds.has(id));
   const shouldAnimate = animated && !reducedMotion;
   const itemMotion = shouldAnimate ? { variants: staggerItemVariants } : {};
-  const previewUrls = useAccountPhotoPreviewUrls(albumPhotos, accessToken);
+  const previewUrls = useCachedAccountImageUrls(albumPhotos, accessToken, ownerKey);
   const metadataRows = useMemo(
     () => albumPhotos.map((photo) => ({
       ...metadataRowFromPhoto(photo, {
@@ -1130,6 +1148,7 @@ function AlbumEditWorkspace({
                   <AlbumEditablePhotoGrid
                     photos={albumPhotos}
                     accessToken={accessToken}
+                    ownerKey={ownerKey}
                     selectedPhotoIds={selectedPhotoIds}
                     coverPhotoId={albumDraft.coverPhotoId}
                     draggedPhotoId={draggedPhotoId}
@@ -1356,6 +1375,7 @@ function AlbumEditorSurfaceBar({
 function AlbumEditablePhotoGrid({
   photos,
   accessToken,
+  ownerKey,
   selectedPhotoIds,
   coverPhotoId,
   draggedPhotoId,
@@ -1367,6 +1387,7 @@ function AlbumEditablePhotoGrid({
 }: {
   photos: AlbumPhotoView[];
   accessToken: string | null;
+  ownerKey: string | null;
   selectedPhotoIds: Set<string>;
   coverPhotoId: string;
   draggedPhotoId: string | null;
@@ -1418,7 +1439,7 @@ function AlbumEditablePhotoGrid({
               dragging ? 'opacity-45' : '',
             ].join(' ')}
           >
-            <AccountPhotoImage photo={photo} accessToken={accessToken} className="aspect-square w-full object-cover" />
+            <AccountPhotoImage photo={photo} accessToken={accessToken} ownerKey={ownerKey} className="aspect-square w-full object-cover" />
             <SelectionPill
               selected={selected}
               label={`Select ${photo.title}`}
@@ -1470,6 +1491,7 @@ function AlbumViewer({
   photoDrafts,
   catalog,
   accessToken,
+  ownerKey,
   fileInputRef,
   loading,
   busy,
@@ -1491,8 +1513,10 @@ function AlbumViewer({
   saveAlbum,
   submitSelectedToGallery,
   withdrawSelectedFromGallery,
+  publishOne,
   patchAlbum,
   onEmbedSelected,
+  onEmbedPhoto,
   onEmbedAlbum,
   goToAlbums,
   openAlbum,
@@ -1513,6 +1537,7 @@ function AlbumViewer({
   photoDrafts: Record<string, PhotoDraft>;
   catalog: PhotoMetadataCatalog;
   accessToken: string | null;
+  ownerKey: string | null;
   fileInputRef: RefObject<HTMLInputElement>;
   loading: boolean;
   busy: boolean;
@@ -1534,8 +1559,10 @@ function AlbumViewer({
   saveAlbum: () => Promise<void>;
   submitSelectedToGallery: () => Promise<void>;
   withdrawSelectedFromGallery: () => Promise<void>;
+  publishOne: (photoId: string) => Promise<void>;
   patchAlbum: (slug: string, updates: AlbumMutation) => Promise<GalleryAlbum>;
   onEmbedSelected: (options?: { photoIds?: string[]; albumSlug?: string; albumTitle?: string }) => void;
+  onEmbedPhoto: (photo: AdminGalleryPhoto, albumSlug?: string) => void;
   onEmbedAlbum: (album: GalleryAlbum) => void;
   goToAlbums: () => void;
   openAlbum: (album: GalleryAlbum) => void;
@@ -1663,35 +1690,6 @@ function AlbumViewer({
             <div className="min-w-0">
               <h3 className="truncate text-3xl font-bold tracking-tight">{selectedAlbum.title}</h3>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <AlbumVisibilityDropdown
-                value={selectedAlbum.status}
-                busy={busy}
-                onChange={(status) => void updateVisibility(status)}
-              />
-              <div className="flex border border-line">
-                <ActionIconButton label="View album" active={detailMode === 'view'} onClick={() => setDetailMode('view')}>
-                  <Eye size={14} strokeWidth={1.5} />
-                </ActionIconButton>
-                <ActionIconButton label="Album settings" active={detailMode === 'edit'} onClick={() => setDetailMode('edit')}>
-                  <Settings2 size={14} strokeWidth={1.5} />
-                </ActionIconButton>
-              </div>
-              <Button
-                onClick={() => onEmbedAlbum(selectedAlbum)}
-                disabled={!embedReady || selectedAlbum.status !== 'published' || selectedAlbum.hasPassword}
-                title={
-                  selectedAlbum.hasPassword
-                    ? 'Password-protected albums are not embeddable'
-                    : selectedAlbum.status === 'published'
-                      ? 'Copy album iframe code'
-                      : 'Make the album public to embed it'
-                }
-              >
-                <Code2 size={14} strokeWidth={1.5} />
-                Embed album
-              </Button>
-            </div>
           </div>
 
           {selectedAlbum.description && <p className="max-w-3xl text-sm text-muted">{selectedAlbum.description}</p>}
@@ -1700,43 +1698,72 @@ function AlbumViewer({
         <AnimatePresence initial={false} mode="wait">
           {detailMode === 'view' ? (
             <motion.div key="album-view" {...modeMotionProps} className="space-y-5">
-              <AlbumActionBar
-                surface={pageSurface}
-                selectedCount={selectedPhotoIds.size}
-                selectedEmbeddableCount={selectedEmbeddableCount}
-                selectedSecondaryCount={selectedVisibleAlbumCount}
-                visibleCount={selectedAlbumPhotos.length}
-                busy={busy}
-                embedReady={embedReady}
-                allVisibleSelected={allVisibleSelected}
-                hasSelectablePhotos={visiblePhotoIds.length > 0}
-                onSurface={(surface) => {
-                  setPageSurface(surface);
-                  if (surface === 'all') selectAlbum(null);
+              <GallerySurface
+                items={selectedAlbumPhotos}
+                enableReactions={false}
+                emptyMessage="No photos in this album yet."
+                selection={{
+                  selectedIds: selectedPhotoIds,
+                  anchorId: selectionAnchorId,
+                  onChange: (ids, anchorId) => {
+                    setSelectedPhotoIds(ids);
+                    setSelectionAnchorId(anchorId);
+                  },
+                  primaryActionLabel: 'Show in public album',
+                  secondaryActionLabel: 'Hide from public album',
+                  selectedSecondaryCount: selectedVisibleAlbumCount,
+                  selectedEmbeddableCount,
+                  embedReady,
+                  embedSelectedLabel: selectedPhotoIds.size > 0 && selectedEmbeddableCount === 0
+                    ? 'Only visible photos in a public album can be embedded'
+                    : 'Embed selected',
+                  onPrimaryAction: () => void updateSelectedAlbumPhotoVisibility('visible'),
+                  onSecondaryAction: () => void updateSelectedAlbumPhotoVisibility('hidden'),
+                  onEmbedSelected: () => onEmbedSelected({
+                    photoIds: selectedAlbumScopedPhotos.filter((photo) => photo.visibility === 'visible').map((photo) => photo.id),
+                    albumSlug: selectedAlbum.slug,
+                    albumTitle: selectedAlbum.title,
+                  }),
                 }}
-                onReload={() => void reload()}
-                onNew={startNewAlbum}
-                primaryActionLabel="Show in public album"
-                secondaryActionLabel="Hide from public album"
-                onPrimaryAction={() => void updateSelectedAlbumPhotoVisibility('visible')}
-                onSecondaryAction={() => void updateSelectedAlbumPhotoVisibility('hidden')}
-                onEmbedSelected={() => onEmbedSelected({
-                  photoIds: selectedAlbumScopedPhotos.filter((photo) => photo.visibility === 'visible').map((photo) => photo.id),
-                  albumSlug: selectedAlbum.slug,
-                  albumTitle: selectedAlbum.title,
-                })}
-                onSelectAll={() => setAllVisible(!allVisibleSelected)}
-                inAlbum
-              />
-              <PhotoGrid
-                photos={selectedAlbumPhotos}
-                accessToken={accessToken}
-                selectedPhotoIds={selectedPhotoIds}
-                onToggleSelection={(photoId, orderedIds, shiftKey) => togglePhotoSelection(photoId, orderedIds, shiftKey)}
-                setViewPhotoId={setViewPhotoId}
-                showTitles={preferences.showPhotoTitles}
-                color
-                selectionVisibility="hover"
+                ownerControls={{
+                  visibility: {
+                    value: selectedAlbum.status,
+                    busy,
+                    onChange: (status) => void updateVisibility(status),
+                  },
+                  mode: {
+                    value: detailMode,
+                    onView: () => setDetailMode('view'),
+                    onEdit: () => setDetailMode('edit'),
+                  },
+                  canEmbedAlbum: embedReady && selectedAlbum.status === 'published' && !selectedAlbum.hasPassword,
+                  embedAlbumDisabledReason: selectedAlbum.hasPassword
+                    ? 'Password-protected albums are not embeddable'
+                    : selectedAlbum.status === 'published'
+                      ? 'Embed settings are still loading'
+                      : 'Make the album public to embed it',
+                  onEmbedAlbum: () => onEmbedAlbum(selectedAlbum),
+                  onReload: () => void reload(),
+                  onAdd: () => fileInputRef.current?.click(),
+                  addLabel: 'Upload',
+                }}
+                renderImage={(photo, className) => (
+                  <AccountPhotoImage photo={photo} accessToken={accessToken} ownerKey={ownerKey} className={className} />
+                )}
+                renderInfo={(photo, { close }) => (
+                  <AccountLightboxInfo
+                    photo={photo}
+                    busy={busy}
+                    canEmbed={selectedAlbum.status === 'published' && !selectedAlbum.hasPassword && photo.visibility === 'visible'}
+                    onEdit={() => {
+                      close();
+                      setDetailMode('edit');
+                    }}
+                    onPublish={() => void publishOne(photo.id)}
+                    onEmbed={() => onEmbedPhoto(photo, selectedAlbum.slug)}
+                    embedReady={embedReady}
+                  />
+                )}
               />
             </motion.div>
           ) : (
@@ -1770,6 +1797,7 @@ function AlbumViewer({
                 photoDrafts={photoDrafts}
                 catalog={catalog}
                 accessToken={accessToken}
+                ownerKey={ownerKey}
                 fileInputRef={fileInputRef}
                 loading={loading}
                 busy={busy}
@@ -1836,7 +1864,7 @@ function AlbumViewer({
                   className="block w-full text-left"
                   aria-label={`Open ${photo.title}`}
                 >
-                  <AccountPhotoImage photo={photo} accessToken={accessToken} className="w-full object-cover" />
+                  <AccountPhotoImage photo={photo} accessToken={accessToken} ownerKey={ownerKey} className="w-full object-cover" />
                 </button>
                 <SelectionPill
                   selected={selected}
@@ -1896,6 +1924,7 @@ function AlbumViewer({
             album={album}
             photos={photos}
             accessToken={accessToken}
+            ownerKey={ownerKey}
             preferences={preferences}
             onOpen={() => openAlbum(album)}
           />
@@ -2147,79 +2176,18 @@ function SelectionPill({
   );
 }
 
-function AlbumVisibilityDropdown({
-  value,
-  busy,
-  onChange,
-}: {
-  value: GalleryAlbumStatus;
-  busy?: boolean;
-  onChange: (value: GalleryAlbumStatus) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    if (!open) return undefined;
-    const handlePointerDown = (event: MouseEvent) => {
-      if (!ref.current?.contains(event.target as Node)) setOpen(false);
-    };
-    window.addEventListener('mousedown', handlePointerDown);
-    return () => window.removeEventListener('mousedown', handlePointerDown);
-  }, [open]);
-
-  return (
-    <div ref={ref} className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((current) => !current)}
-        disabled={busy}
-        className="inline-flex h-9 items-center gap-2 border border-line px-3 text-[11px] uppercase tracking-[0.18em] transition-colors hover:border-line-strong disabled:opacity-40"
-      >
-        {value === 'published' ? <Globe size={13} strokeWidth={1.6} /> : <Lock size={13} strokeWidth={1.6} />}
-        {albumVisibilityLabel(value)}
-        <ChevronDown size={13} strokeWidth={1.5} />
-      </button>
-      {open && (
-        <div className="absolute right-0 top-[calc(100%+0.45rem)] z-40 flex min-w-44 flex-col border border-line bg-surface p-1 shadow-[0_12px_40px_rgba(0,0,0,0.24)]">
-          <button
-            type="button"
-            onClick={() => {
-              setOpen(false);
-              onChange('draft');
-            }}
-            className="flex items-center justify-between gap-3 px-3 py-2 text-left text-xs uppercase tracking-[0.18em] transition-colors hover:bg-faint"
-          >
-            <span>Private</span>
-            <Lock size={13} strokeWidth={1.5} />
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setOpen(false);
-              onChange('published');
-            }}
-            className="flex items-center justify-between gap-3 px-3 py-2 text-left text-xs uppercase tracking-[0.18em] transition-colors hover:bg-faint"
-          >
-            <span>Public</span>
-            <Globe size={13} strokeWidth={1.5} />
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
 function AlbumCard({
   album,
   photos,
   accessToken,
+  ownerKey,
   preferences,
   onOpen,
 }: {
   album: GalleryAlbum;
   photos: AdminGalleryPhoto[];
   accessToken: string | null;
+  ownerKey: string | null;
   preferences: AlbumDisplayPreferences;
   onOpen: () => void;
 }) {
@@ -2228,7 +2196,7 @@ function AlbumCard({
     <button type="button" onClick={onOpen} className="group min-w-0 border border-line text-left transition-colors hover:border-line-strong">
       <div className="aspect-[4/3] w-full overflow-hidden border-b border-line bg-faint">
         {cover ? (
-          <AccountPhotoImage photo={cover} accessToken={accessToken} className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.02]" />
+          <AccountPhotoImage photo={cover} accessToken={accessToken} ownerKey={ownerKey} className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.02]" />
         ) : (
           <div className="flex h-full w-full items-center justify-center text-muted">
             <FolderOpen size={24} strokeWidth={1.4} />
@@ -2240,79 +2208,6 @@ function AlbumCard({
         <div className="mt-1 truncate text-xs text-muted">{albumSubtitle(album, preferences.albumSubtitle)}</div>
       </div>
     </button>
-  );
-}
-
-function PhotoGrid({
-  photos,
-  accessToken,
-  selectedPhotoIds,
-  onToggleSelection,
-  setViewPhotoId,
-  showTitles,
-  color,
-  selectionVisibility = 'always',
-}: {
-  photos: AdminGalleryPhoto[];
-  accessToken: string | null;
-  selectedPhotoIds: Set<string>;
-  onToggleSelection: (photoId: string, orderedIds: string[], shiftKey: boolean) => void;
-  setViewPhotoId: Dispatch<SetStateAction<string | null>>;
-  showTitles: boolean;
-  color: boolean;
-  selectionVisibility?: 'always' | 'hover';
-}) {
-  const orderedIds = photos.map((photo) => photo.id);
-  return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-      {photos.map((photo) => {
-        const selected = selectedPhotoIds.has(photo.id);
-        const selectionClass = selectionVisibility === 'hover' && !selected
-          ? 'absolute left-2 top-2 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100'
-          : 'absolute left-2 top-2';
-        return (
-        <div key={photo.id} className="group border border-line">
-          <div className="relative">
-            <button
-              type="button"
-              onClick={(event) => {
-                if (event.shiftKey) {
-                  onToggleSelection(photo.id, orderedIds, true);
-                  return;
-                }
-                setViewPhotoId(photo.id);
-              }}
-              className="block w-full text-left"
-              aria-label={`Open ${photo.title}`}
-            >
-              <AccountPhotoImage photo={photo} accessToken={accessToken} className={['aspect-square w-full object-cover', color ? '' : 'grayscale'].join(' ')} />
-            </button>
-            <SelectionPill
-              selected={selected}
-              label={`Select ${photo.title}`}
-              onClick={(event) => onToggleSelection(photo.id, orderedIds, event.shiftKey)}
-              className={selectionClass}
-            />
-            {'visibility' in photo && photo.visibility === 'hidden' && (
-              <div className="absolute bottom-2 right-2 border border-line bg-surface/90 px-1.5 py-1 text-[10px] uppercase tracking-wide">
-                Hidden
-              </div>
-            )}
-          </div>
-          {showTitles && (
-            <div className="border-t border-line p-2">
-              <div className="truncate text-xs font-bold">{photo.title}</div>
-            </div>
-          )}
-        </div>
-        );
-      })}
-      {photos.length === 0 && (
-        <div className="col-span-full border border-line px-6 py-12 text-center text-xs text-muted">
-          No photos here yet.
-        </div>
-      )}
-    </div>
   );
 }
 
@@ -2828,98 +2723,13 @@ function updatePhotoSelection(
 function AccountPhotoImage({
   photo,
   accessToken,
+  ownerKey,
   className,
 }: {
-  photo: Pick<AdminGalleryPhoto, 'id' | 'galleryStatus' | 'src'>;
+  photo: Pick<AdminGalleryPhoto, 'id' | 'galleryStatus' | 'src' | 'updatedAt'>;
   accessToken: string | null;
+  ownerKey: string | null;
   className: string;
 }) {
-  const [src, setSrc] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    let objectUrl: string | null = null;
-    setSrc(null);
-
-    if (photo.src?.startsWith('/api/gallery/')) {
-      setSrc(photo.src);
-      return undefined;
-    }
-    if (!accessToken) return undefined;
-
-    fetch(`/api/account/gallery/photos/${encodeURIComponent(photo.id)}/image`, {
-      headers: { authorization: `Bearer ${accessToken}` },
-    })
-      .then((response) => {
-        if (!response.ok) throw new Error('thumbnail failed');
-        return response.blob();
-      })
-      .then((blob) => {
-        if (cancelled) return;
-        objectUrl = URL.createObjectURL(blob);
-        setSrc(objectUrl);
-      })
-      .catch(() => {
-        if (!cancelled) setSrc(null);
-      });
-
-    return () => {
-      cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [accessToken, photo.id, photo.src]);
-
-  if (!src) {
-    return (
-      <div className={`${className} flex items-center justify-center border border-line bg-faint text-muted`}>
-        <ImagePlus size={16} strokeWidth={1.5} />
-      </div>
-    );
-  }
-
-  return <img src={src} alt="" className={className} />;
-}
-
-function useAccountPhotoPreviewUrls(
-  photos: Array<Pick<AdminGalleryPhoto, 'id' | 'src'>>,
-  accessToken: string | null,
-): Record<string, string> {
-  const [urls, setUrls] = useState<Record<string, string>>({});
-  const key = photos.map((photo) => `${photo.id}:${photo.src}`).join('|');
-
-  useEffect(() => {
-    let cancelled = false;
-    const objectUrls: string[] = [];
-    setUrls({});
-
-    const load = async () => {
-      const entries = await Promise.all(photos.map(async (photo) => {
-        if (photo.src?.startsWith('/api/gallery/')) return [photo.id, photo.src] as const;
-        if (!accessToken) return null;
-        try {
-          const response = await fetch(`/api/account/gallery/photos/${encodeURIComponent(photo.id)}/image`, {
-            headers: { authorization: `Bearer ${accessToken}` },
-          });
-          if (!response.ok) throw new Error('preview failed');
-          const blob = await response.blob();
-          const objectUrl = URL.createObjectURL(blob);
-          objectUrls.push(objectUrl);
-          return [photo.id, objectUrl] as const;
-        } catch {
-          return null;
-        }
-      }));
-      if (!cancelled) setUrls(Object.fromEntries(entries.filter((entry): entry is readonly [string, string] => !!entry)));
-    };
-
-    void load();
-    return () => {
-      cancelled = true;
-      objectUrls.forEach((url) => URL.revokeObjectURL(url));
-    };
-    // `key` intentionally captures id/src changes without depending on the array identity.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [accessToken, key]);
-
-  return urls;
+  return <CachedAccountImage photo={photo} accessToken={accessToken} ownerKey={ownerKey} className={className} />;
 }
