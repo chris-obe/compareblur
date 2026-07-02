@@ -8,6 +8,7 @@ import { systemLabel, systemOpticsLabel, systemSourceLabel, type CompareSystem }
 import { usePublicGalleryPhotos } from '../../hooks/usePublicGalleryPhotos';
 import { MatchBadge } from '../optics/MatchBadge';
 import { Button } from '../ui/Button';
+import { Tooltip } from '../ui/Tooltip';
 import { DashSwatch } from './BlurChart';
 
 interface Props {
@@ -259,10 +260,12 @@ export function CompareGalleryExamplesToggle({
   onToggle: () => void;
 }) {
   return (
-    <Button type="button" variant={open ? 'solid' : 'ghost'} onClick={onToggle} aria-pressed={open}>
-      <Image size={14} strokeWidth={1.5} />
-      Examples
-    </Button>
+    <Tooltip tip="compareExamples" side="bottom" align="end">
+      <Button type="button" variant={open ? 'solid' : 'ghost'} onClick={onToggle} aria-pressed={open} className="h-9 px-2.5">
+        <Image size={14} strokeWidth={1.5} />
+        <span className="hidden sm:inline">Examples</span>
+      </Button>
+    </Tooltip>
   );
 }
 

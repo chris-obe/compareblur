@@ -1,9 +1,13 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 
+interface DropdownRenderProps {
+  close: () => void;
+}
+
 interface DropdownProps {
   trigger: ReactNode;
-  children: ReactNode;
+  children: ReactNode | ((props: DropdownRenderProps) => ReactNode);
   align?: 'left' | 'right';
   className?: string;
   closeOnClick?: boolean;
@@ -13,6 +17,7 @@ interface DropdownProps {
 export function Dropdown({ trigger, children, align = 'right', className = '', closeOnClick = true }: DropdownProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const close = () => setOpen(false);
 
   useEffect(() => {
     if (!open) return;
@@ -48,7 +53,7 @@ export function Dropdown({ trigger, children, align = 'right', className = '', c
             style={{ borderColor: 'var(--line)' }}
             onClick={closeOnClick ? () => setOpen(false) : undefined}
           >
-            {children}
+            {typeof children === 'function' ? children({ close }) : children}
           </motion.div>
         )}
       </AnimatePresence>

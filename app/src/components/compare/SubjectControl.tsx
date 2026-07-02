@@ -1,7 +1,9 @@
-import { X } from 'lucide-react';
+import { Check, ChevronDown, Crosshair, MoveHorizontal, Target, X } from 'lucide-react';
 import { NumberField } from '../ui/NumberField';
 import { focusDistanceForFraming, getFormat } from '../../lib/engine';
 import { SUBJECT_DISTANCE_PRESETS } from '../../lib/subjectDistance';
+import { Dropdown } from '../ui/Dropdown';
+import { Tooltip } from '../ui/Tooltip';
 
 interface Props {
   width: number;
@@ -20,7 +22,8 @@ const distToSlider = (d: number) => Math.round(((Math.log10(d) - L_MIN) / (L_MAX
 const fmtDist = (d: number) => (d < 10 ? `${d.toFixed(1)} m` : `${Math.round(d)} m`);
 
 export function SubjectControl({ width, onChange, focusM, onFocusChange }: Props) {
-  const isPreset = SUBJECT_DISTANCE_PRESETS.some((preset) => preset.widthM === width);
+  const selectedPreset = SUBJECT_DISTANCE_PRESETS.find((preset) => preset.widthM === width);
+  const isPreset = selectedPreset != null;
   const manual = focusM != null;
   // where the handle sits in framing mode: the distance a 50mm FF lens would frame this subject at
   const autoRef = focusDistanceForFraming(50, getFormat('ff'), width);
@@ -32,73 +35,119 @@ export function SubjectControl({ width, onChange, focusM, onFocusChange }: Props
   const enableFixedDistance = () => onFocusChange(sliderDist);
 
   return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="label mr-1">Framing</span>
-        {SUBJECT_DISTANCE_PRESETS.map((preset) => (
-          <button
-            key={preset.id}
-            type="button"
-            onClick={() => setFramingWidth(preset.widthM)}
-            className={[
-              'border px-2.5 py-1 text-xs transition-colors',
-              !manual && width === preset.widthM
-                ? 'border-fg bg-fg text-bg'
-                : 'border-line text-fg hover:border-line-strong',
-            ].join(' ')}
-          >
-            {preset.label}
-          </button>
-        ))}
-        <label
-          className={[
-            'flex items-center gap-1 border px-2 py-1 text-xs transition-colors',
-            !manual && !isPreset ? 'border-fg' : 'border-line',
-          ].join(' ')}
-        >
-          <NumberField
-            value={width}
-            onCommit={setFramingWidth}
-            min={0.1}
-            step={0.1}
-            aria-label="Subject width in metres"
-            className="w-14 bg-transparent text-right outline-none tabular-nums"
-          />
-          <span className="text-muted">m wide</span>
-        </label>
-      </div>
+    <div className="flex flex-wrap items-center gap-2">
+      <Dropdown
+        align="left"
+        className="w-72"
+        closeOnClick={false}
+        trigger={
+          <Tooltip tip="compareFraming" side="bottom" align="start">
+            <div className="inline-flex h-9 items-center gap-2 border border-line px-2.5 text-xs transition-colors hover:border-line-strong">
+              <Target size={14} strokeWidth={1.6} />
+              <span className="label">Frame</span>
+              <span className="font-bold">{selectedPreset?.label ?? `${fmtDist(width)} wide`}</span>
+              <ChevronDown size={13} strokeWidth={1.6} className="text-muted" />
+            </div>
+          </Tooltip>
+        }
+      >
+        {({ close }) => (
+          <div className="py-1">
+            <div className="label px-3 py-1.5">Subject fill</div>
+            {SUBJECT_DISTANCE_PRESETS.map((preset) => (
+              <button
+                key={preset.id}
+                type="button"
+                onClick={() => {
+                  setFramingWidth(preset.widthM);
+                  close();
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-faint"
+              >
+                <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center">
+                  {!manual && width === preset.widthM && <Check size={12} strokeWidth={2.4} />}
+                </span>
+                <span className="min-w-0 flex-1 truncate">{preset.label}</span>
+                <span className="text-muted tabular-nums">{fmtDist(preset.widthM)} wide</span>
+              </button>
+            ))}
+            <div className="mt-1 border-t border-line p-3">
+              <label className="flex items-center gap-2 text-xs">
+                <span className="label shrink-0">Custom</span>
+                <NumberField
+                  value={width}
+                  onCommit={setFramingWidth}
+                  min={0.1}
+                  step={0.1}
+                  aria-label="Subject width in metres"
+                  className={[
+                    'min-w-0 flex-1 border bg-transparent px-2 py-1 text-right outline-none tabular-nums focus:border-line-strong',
+                    !manual && !isPreset ? 'border-fg' : 'border-line',
+                  ].join(' ')}
+                />
+                <span className="text-muted">m wide</span>
+              </label>
+            </div>
+          </div>
+        )}
+      </Dropdown>
 
-      <div className="flex flex-wrap items-center gap-3 border border-line px-3 py-2">
-        <div className="inline-flex shrink-0 border border-line">
-          <button
-            type="button"
-            onClick={() => onFocusChange(null)}
-            aria-pressed={!manual}
-            title="Each system stands where it needs to match the selected framing"
-            className={[
-              'px-3 py-1.5 text-xs uppercase tracking-wide transition-colors',
-              !manual ? 'bg-fg text-bg' : 'hover:bg-faint',
-            ].join(' ')}
-          >
-            Match framing
-          </button>
-          <button
-            type="button"
-            onClick={enableFixedDistance}
-            aria-pressed={manual}
-            title="Every system uses the same camera-to-subject distance"
-            className={[
-              'border-l border-line px-3 py-1.5 text-xs uppercase tracking-wide transition-colors',
-              manual ? 'bg-fg text-bg' : 'hover:bg-faint',
-            ].join(' ')}
-          >
-            Fixed position
-          </button>
-        </div>
+      <Dropdown
+        align="left"
+        className="w-72"
+        trigger={
+          <Tooltip tip="comparePositionMode" side="bottom" align="start">
+            <div className="inline-flex h-9 items-center gap-2 border border-line px-2.5 text-xs transition-colors hover:border-line-strong">
+              <Crosshair size={14} strokeWidth={1.6} />
+              <span className="label">Mode</span>
+              <span className="font-bold">{manual ? 'Fixed position' : 'Match framing'}</span>
+              <ChevronDown size={13} strokeWidth={1.6} className="text-muted" />
+            </div>
+          </Tooltip>
+        }
+      >
+        {({ close }) => (
+          <div className="py-1">
+            <button
+              type="button"
+              onClick={() => {
+                onFocusChange(null);
+                close();
+              }}
+              className="flex w-full items-start gap-2 px-3 py-2 text-left text-xs hover:bg-faint"
+            >
+              <span className="mt-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center">
+                {!manual && <Check size={12} strokeWidth={2.4} />}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block font-bold">Match framing</span>
+                <span className="label block normal-case tracking-normal">Each system stands where it needs to.</span>
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                enableFixedDistance();
+                close();
+              }}
+              className="flex w-full items-start gap-2 px-3 py-2 text-left text-xs hover:bg-faint"
+            >
+              <span className="mt-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center">
+                {manual && <Check size={12} strokeWidth={2.4} />}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block font-bold">Fixed position</span>
+                <span className="label block normal-case tracking-normal">One camera-to-subject distance.</span>
+              </span>
+            </button>
+          </div>
+        )}
+      </Dropdown>
 
-        {manual ? (
-          <div className="flex min-w-[min(100%,22rem)] flex-1 items-center gap-3">
-            <span className="label whitespace-nowrap">Camera to subject</span>
+      {manual ? (
+        <Tooltip tip="compareFixedDistance" side="bottom" align="start">
+          <div className="flex h-9 min-w-[min(100%,22rem)] flex-1 items-center gap-2 border border-line px-2.5">
+            <MoveHorizontal size={14} strokeWidth={1.6} className="shrink-0 text-muted" />
             <input
               type="range"
               min={0}
@@ -109,7 +158,7 @@ export function SubjectControl({ width, onChange, focusM, onFocusChange }: Props
               className="h-1 min-w-0 flex-1 cursor-pointer appearance-none bg-line"
               style={{ accentColor: 'var(--fg)' }}
             />
-            <span className="w-24 shrink-0 text-right text-xs font-bold tabular-nums">{fmtDist(focusM)}</span>
+            <span className="w-16 shrink-0 text-right text-xs font-bold tabular-nums">{fmtDist(focusM)}</span>
             <button
               type="button"
               onClick={() => onFocusChange(null)}
@@ -120,19 +169,19 @@ export function SubjectControl({ width, onChange, focusM, onFocusChange }: Props
               <X size={13} strokeWidth={1.5} />
             </button>
           </div>
-        ) : (
-          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-4 gap-y-1 text-xs">
-            <span className="min-w-0">
-              <span className="label mr-1">Standing distance</span>
-              <span className="font-bold">per system</span>
-            </span>
-            <span className="min-w-0">
-              <span className="label mr-1">Background axis</span>
-              <span className="font-bold">+0.1-200m behind subject</span>
-            </span>
-          </div>
-        )}
-      </div>
+        </Tooltip>
+      ) : (
+        <div className="flex h-9 min-w-0 flex-1 items-center gap-3 overflow-hidden border border-line px-2.5 text-xs">
+          <span className="min-w-0 truncate">
+            <span className="label mr-1">Stand</span>
+            <span className="font-bold">per system</span>
+          </span>
+          <span className="hidden min-w-0 truncate md:inline">
+            <span className="label mr-1">BG</span>
+            <span className="font-bold">+0.1-200m</span>
+          </span>
+        </div>
+      )}
     </div>
   );
 }

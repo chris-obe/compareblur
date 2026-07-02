@@ -1,15 +1,16 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { scaleLinear, scaleLog } from '@visx/scale';
 import { LinePath, Line } from '@visx/shape';
 import { Group } from '@visx/group';
 import { AxisBottom, AxisLeft } from '@visx/axis';
 import { localPoint } from '@visx/event';
 import { ParentSize } from '@visx/responsive';
-import { Layers, Ruler } from 'lucide-react';
+import { Check, ChevronDown, Layers, MousePointer2, Ruler } from 'lucide-react';
 import { compareLineColor, compareLineStyle } from '../../lib/compareStyles';
 import { blurFraction, fieldOfView, focusDistanceForFraming } from '../../lib/engine';
 import { systemLabel, systemOpticsLabel, systemSourceLabel, type CompareSystem } from '../../store/CompareProvider';
 import { Dropdown } from '../ui/Dropdown';
+import { Tooltip } from '../ui/Tooltip';
 
 const MARGIN = { top: 14, right: 18, bottom: 34, left: 46 };
 const MIN_BG_BEHIND_M = 0.1;
@@ -464,64 +465,10 @@ export function BlurChart({
 
   return (
     <div className="flex h-full min-h-[360px] w-full flex-col border border-line">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-4 py-2">
+      <div className="border-b border-line px-4 py-2">
         <div>
-          <div className="text-xs font-bold uppercase tracking-wide">Background blur by framing</div>
-          <div className="label mt-1">x = background distance behind subject · y = blur as % of frame width</div>
-          {showDepthBands && <DepthLegend />}
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="inline-flex border border-line">
-            {(['fixed', 'tracked'] as const).map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                onClick={() => setReadoutMode(mode)}
-                aria-pressed={readoutMode === mode}
-                className={[
-                  'px-3 py-1.5 text-xs uppercase tracking-wide transition-colors',
-                  readoutMode === mode ? 'bg-fg text-bg' : 'hover:bg-faint',
-                ].join(' ')}
-              >
-                {mode === 'fixed' ? 'Fixed' : 'Track'}
-              </button>
-            ))}
-          </div>
-          {readoutMode === 'tracked' && series.length > 0 && (
-            <SeriesDropdown
-              series={series}
-              selectedIds={activeTrackedSeriesIds}
-              allSelected={allTracked}
-              onSelectAll={selectAllTracked}
-              onToggle={toggleTrackedSeries}
-            />
-          )}
-          <button
-            type="button"
-            onClick={() => setShowDepthBands((current) => !current)}
-            aria-pressed={showDepthBands}
-            title="Show background depth bands"
-            className={[
-              'inline-flex items-center gap-2 border px-3 py-1.5 text-xs uppercase tracking-wide transition-colors',
-              showDepthBands ? 'border-fg bg-fg text-bg' : 'border-line hover:border-line-strong',
-            ].join(' ')}
-          >
-            <Layers size={14} strokeWidth={1.5} />
-            Depth
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowContext((current) => !current)}
-            aria-pressed={showContext}
-            title="Show standing distance and horizontal FOV"
-            className={[
-              'inline-flex items-center gap-2 border px-3 py-1.5 text-xs uppercase tracking-wide transition-colors',
-              showContext ? 'border-fg bg-fg text-bg' : 'border-line hover:border-line-strong',
-            ].join(' ')}
-          >
-            <Ruler size={14} strokeWidth={1.5} />
-            FOV / stand
-          </button>
+          <div className="text-xs font-bold uppercase tracking-wide">Blur / background</div>
+          <div className="label mt-1">x +m behind subject · y blur %</div>
         </div>
       </div>
       {systems.length === 0 ? (
@@ -529,7 +476,24 @@ export function BlurChart({
           Add a system to plot its background blur.
         </div>
       ) : (
-        <div className="min-h-0 flex-1">
+        <div className="relative min-h-0 flex-1">
+          <div className="absolute right-3 top-3 z-20 flex items-center gap-1">
+            <ReadoutMenu
+              series={series}
+              readoutMode={readoutMode}
+              onReadoutMode={setReadoutMode}
+              selectedIds={activeTrackedSeriesIds}
+              allSelected={allTracked}
+              onSelectAll={selectAllTracked}
+              onToggle={toggleTrackedSeries}
+            />
+            <LayerMenu
+              showDepthBands={showDepthBands}
+              showContext={showContext}
+              onToggleDepth={() => setShowDepthBands((current) => !current)}
+              onToggleContext={() => setShowContext((current) => !current)}
+            />
+          </div>
           <ParentSize>
             {({ width, height }) => (
               <Inner
@@ -549,9 +513,9 @@ export function BlurChart({
   );
 }
 
-function DepthLegend() {
+function DepthLegend({ compact = false }: { compact?: boolean }) {
   return (
-    <div className="mt-2 flex max-w-full flex-wrap items-center gap-x-3 gap-y-1">
+    <div className={['flex max-w-full flex-wrap items-center gap-x-3 gap-y-1', compact ? '' : 'mt-2'].join(' ')}>
       {DEPTH_BANDS.map((band) => (
         <span key={band.id} className="inline-flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-muted">
           <span
@@ -565,21 +529,25 @@ function DepthLegend() {
   );
 }
 
-function SeriesDropdown({
+function ReadoutMenu({
   series,
+  readoutMode,
+  onReadoutMode,
   selectedIds,
   allSelected,
   onSelectAll,
   onToggle,
 }: {
   series: Series[];
+  readoutMode: ReadoutMode;
+  onReadoutMode: (mode: ReadoutMode) => void;
   selectedIds: string[];
   allSelected: boolean;
   onSelectAll: () => void;
   onToggle: (id: string) => void;
 }) {
   const selectedSet = new Set(selectedIds);
-  const triggerText = allSelected ? `All ${series.length}` : `${selectedIds.length}/${series.length}`;
+  const triggerLabel = readoutMode === 'fixed' ? 'Fixed' : allSelected ? `Track ${series.length}` : `Track ${selectedIds.length}`;
 
   return (
     <Dropdown
@@ -587,43 +555,170 @@ function SeriesDropdown({
       className="w-72"
       closeOnClick={false}
       trigger={
-        <div className="inline-flex max-w-52 items-center gap-2 border border-line px-3 py-1.5 text-xs uppercase tracking-wide transition-colors hover:border-line-strong">
-          <span className="min-w-0 truncate">Track {triggerText}</span>
-        </div>
+        <Tooltip tip="compareChartReadout" align="end">
+          <ChartToolTrigger active icon={<MousePointer2 size={15} strokeWidth={1.6} />} label={triggerLabel} />
+        </Tooltip>
       }
     >
-      <div className="max-h-64 overflow-y-auto py-1">
-        <button
-          type="button"
-          onClick={onSelectAll}
-          className={['flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-faint', allSelected ? 'bg-faint' : ''].join(' ')}
-          aria-pressed={allSelected}
-        >
-          <ToggleMark selected={allSelected} />
-          <span className="min-w-0 flex-1 truncate font-bold">All systems</span>
-          <span className="label">{series.length}</span>
-        </button>
-        {series.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            onClick={() => onToggle(item.id)}
-            className={[
-              'flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-faint',
-              selectedSet.has(item.id) ? 'bg-faint' : '',
-            ].join(' ')}
-            aria-pressed={selectedSet.has(item.id)}
-          >
-            <ToggleMark selected={selectedSet.has(item.id)} />
-            <DashSwatch color={item.stroke} dash={item.dash} />
-            <span className="min-w-0 flex-1">
-              <span className="block truncate font-bold">{item.optionLabel}</span>
-              <span className="label block truncate">{item.sourceLabel}</span>
-            </span>
-          </button>
-        ))}
+      {({ close }) => (
+        <div className="py-1">
+          <div className="label px-3 py-1.5">Readout</div>
+          {(['fixed', 'tracked'] as const).map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              onClick={() => {
+                onReadoutMode(mode);
+                if (mode === 'fixed') close();
+              }}
+              className="flex w-full items-start gap-2 px-3 py-2 text-left text-xs hover:bg-faint"
+              aria-pressed={readoutMode === mode}
+            >
+              <span className="mt-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center">
+                {readoutMode === mode && <Check size={12} strokeWidth={2.4} />}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block font-bold">{mode === 'fixed' ? 'Fixed list' : 'Track lines'}</span>
+                <span className="label block normal-case tracking-normal">
+                  {mode === 'fixed' ? 'One ranked hover list.' : 'Labels follow selected curves.'}
+                </span>
+              </span>
+            </button>
+          ))}
+          {readoutMode === 'tracked' && series.length > 0 && (
+            <div className="mt-1 border-t border-line py-1">
+              <button
+                type="button"
+                onClick={onSelectAll}
+                className={['flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-faint', allSelected ? 'bg-faint' : ''].join(' ')}
+                aria-pressed={allSelected}
+              >
+                <ToggleMark selected={allSelected} />
+                <span className="min-w-0 flex-1 truncate font-bold">All lines</span>
+                <span className="label">{series.length}</span>
+              </button>
+              <div className="max-h-56 overflow-y-auto">
+                {series.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => onToggle(item.id)}
+                    className={[
+                      'flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-faint',
+                      selectedSet.has(item.id) ? 'bg-faint' : '',
+                    ].join(' ')}
+                    aria-pressed={selectedSet.has(item.id)}
+                  >
+                    <ToggleMark selected={selectedSet.has(item.id)} />
+                    <DashSwatch color={item.stroke} dash={item.dash} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate font-bold">{item.optionLabel}</span>
+                      <span className="label block truncate">{item.sourceLabel}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </Dropdown>
+  );
+}
+
+function LayerMenu({
+  showDepthBands,
+  showContext,
+  onToggleDepth,
+  onToggleContext,
+}: {
+  showDepthBands: boolean;
+  showContext: boolean;
+  onToggleDepth: () => void;
+  onToggleContext: () => void;
+}) {
+  const enabledCount = Number(showDepthBands) + Number(showContext);
+
+  return (
+    <Dropdown
+      align="right"
+      className="w-72"
+      closeOnClick={false}
+      trigger={
+        <Tooltip tip="compareChartLayers" align="end">
+          <ChartToolTrigger
+            active={enabledCount > 0}
+            icon={<Layers size={15} strokeWidth={1.6} />}
+            label={enabledCount > 0 ? `Views ${enabledCount}` : 'Views'}
+          />
+        </Tooltip>
+      }
+    >
+      <div className="py-1">
+        <div className="label px-3 py-1.5">View layers</div>
+        <ToggleMenuRow
+          active={showDepthBands}
+          icon={<Layers size={14} strokeWidth={1.6} />}
+          label="Depth bands"
+          detail="Room-to-open distance shading."
+          onClick={onToggleDepth}
+        />
+        {showDepthBands && (
+          <div className="border-b border-line px-3 pb-2">
+            <DepthLegend compact />
+          </div>
+        )}
+        <ToggleMenuRow
+          active={showContext}
+          icon={<Ruler size={14} strokeWidth={1.6} />}
+          label="FOV / stand"
+          detail="Standing distance and horizontal view."
+          onClick={onToggleContext}
+        />
       </div>
     </Dropdown>
+  );
+}
+
+function ChartToolTrigger({ icon, label, active }: { icon: ReactNode; label: string; active?: boolean }) {
+  return (
+    <div
+      className={[
+        'inline-flex h-9 items-center gap-2 border px-2.5 text-xs transition-colors',
+        active ? 'border-fg bg-bg/95 text-fg' : 'border-line bg-bg/95 text-muted hover:border-line-strong hover:text-fg',
+      ].join(' ')}
+    >
+      {icon}
+      <span className="max-w-24 truncate font-bold">{label}</span>
+      <ChevronDown size={13} strokeWidth={1.6} className="text-muted" />
+    </div>
+  );
+}
+
+function ToggleMenuRow({
+  active,
+  icon,
+  label,
+  detail,
+  onClick,
+}: {
+  active: boolean;
+  icon: ReactNode;
+  label: string;
+  detail: string;
+  onClick: () => void;
+}) {
+  return (
+    <button type="button" onClick={onClick} className="flex w-full items-start gap-2 px-3 py-2 text-left text-xs hover:bg-faint" aria-pressed={active}>
+      <span className="mt-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center">
+        {active && <Check size={12} strokeWidth={2.4} />}
+      </span>
+      <span className="mt-0.5 shrink-0 text-muted">{icon}</span>
+      <span className="min-w-0 flex-1">
+        <span className="block font-bold">{label}</span>
+        <span className="label block normal-case tracking-normal">{detail}</span>
+      </span>
+    </button>
   );
 }
 
