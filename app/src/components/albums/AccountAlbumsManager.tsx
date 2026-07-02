@@ -193,6 +193,7 @@ const EMPTY_ALBUM: AlbumDraft = {
 
 type AlbumSubtitleField = 'updated' | 'created' | 'published' | 'photo-count' | 'status' | 'description';
 type AlbumDefaultMode = 'view' | 'edit';
+type AlbumEditSurface = 'photos' | 'details';
 
 interface AlbumDisplayPreferences {
   albumSubtitle: AlbumSubtitleField;
@@ -581,6 +582,7 @@ export function AccountAlbumsManager({ mode, routeAlbumSlug }: Props) {
       albumPhotos={albumPhotos}
       selectedAlbumSlug={selectedAlbumSlug}
       selectedPhotoIds={selectedPhotoIds}
+      selectionAnchorId={selectionAnchorId}
       albumDraft={albumDraft}
       photoDrafts={photoDrafts}
       catalog={{ cameras, lenses }}
@@ -623,6 +625,7 @@ export function AccountAlbumsManager({ mode, routeAlbumSlug }: Props) {
             albums={albums}
             photos={photos}
             availablePhotos={availablePhotos}
+            albumPhotos={albumPhotos}
             selectedAlbum={selectedAlbum}
             isNewRoute={isNewRoute}
             detailMode={detailMode}
@@ -726,6 +729,7 @@ function AlbumBuilder({
   albumPhotos,
   selectedAlbumSlug,
   selectedPhotoIds,
+  selectionAnchorId,
   albumDraft,
   photoDrafts,
   catalog,
@@ -754,6 +758,7 @@ function AlbumBuilder({
   albumPhotos: AlbumPhotoView[];
   selectedAlbumSlug: string;
   selectedPhotoIds: Set<string>;
+  selectionAnchorId: string | null;
   albumDraft: AlbumDraft;
   photoDrafts: Record<string, PhotoDraft>;
   catalog: PhotoMetadataCatalog;
@@ -799,33 +804,13 @@ function AlbumBuilder({
 
       <div className={gridClass}>
         <aside className={albumNavClass}>
-          <Button variant="solid" className="w-full" onClick={startNewAlbum}>
-            <Plus size={14} strokeWidth={1.5} />
-            New album
-          </Button>
-          <div className={albumListClass}>
-            {albums.map((album) => (
-              <button
-                key={album.slug}
-                type="button"
-                onClick={() => selectAlbum(album)}
-                className={[
-                  'block w-full px-3 py-3 text-left transition-colors',
-                  selectedAlbumSlug === album.slug ? 'bg-fg text-bg' : 'hover:bg-faint',
-                ].join(' ')}
-              >
-                <div className="truncate text-xs font-bold">{album.title}</div>
-                <div className="mt-1 text-[10px] uppercase tracking-wide opacity-70">
-                  {album.photos.length} photos · {albumVisibilityLabel(album.status)}
-                </div>
-              </button>
-            ))}
-            {albums.length === 0 && (
-              <div className="px-3 py-6 text-center text-xs text-muted">
-                Albums you create appear here.
-              </div>
-            )}
-          </div>
+          <AlbumNav
+            albums={albums}
+            selectedAlbumSlug={selectedAlbumSlug}
+            listClassName={albumListClass}
+            onSelectAlbum={selectAlbum}
+            onNewAlbum={startNewAlbum}
+          />
         </aside>
 
         <AlbumEditWorkspace
@@ -852,9 +837,56 @@ function AlbumBuilder({
           reload={reload}
           editorClass={editorClass}
           optionsClass={optionsClass}
+          selectionAnchorId={selectionAnchorId}
         />
       </div>
     </div>
+  );
+}
+
+function AlbumNav({
+  albums,
+  selectedAlbumSlug,
+  listClassName,
+  onSelectAlbum,
+  onNewAlbum,
+}: {
+  albums: GalleryAlbum[];
+  selectedAlbumSlug: string;
+  listClassName: string;
+  onSelectAlbum: (album: GalleryAlbum) => void;
+  onNewAlbum: () => void;
+}) {
+  return (
+    <>
+      <Button variant="solid" className="w-full" onClick={onNewAlbum}>
+        <Plus size={14} strokeWidth={1.5} />
+        New album
+      </Button>
+      <div className={listClassName}>
+        {albums.map((album) => (
+          <button
+            key={album.slug}
+            type="button"
+            onClick={() => onSelectAlbum(album)}
+            className={[
+              'block w-full px-3 py-3 text-left transition-colors',
+              selectedAlbumSlug === album.slug ? 'bg-fg text-bg' : 'hover:bg-faint',
+            ].join(' ')}
+          >
+            <div className="truncate text-xs font-bold">{album.title}</div>
+            <div className="mt-1 text-[10px] uppercase tracking-wide opacity-70">
+              {album.photos.length} photos · {albumVisibilityLabel(album.status)}
+            </div>
+          </button>
+        ))}
+        {albums.length === 0 && (
+          <div className="px-3 py-6 text-center text-xs text-muted">
+            Albums you create appear here.
+          </div>
+        )}
+      </div>
+    </>
   );
 }
 
@@ -864,6 +896,7 @@ function AlbumEditWorkspace({
   photos,
   selectedAlbumSlug,
   selectedPhotoIds,
+  selectionAnchorId,
   albumDraft,
   photoDrafts,
   catalog,
@@ -883,12 +916,14 @@ function AlbumEditWorkspace({
   editorClass,
   optionsClass,
   animated = false,
+  showAlbumFields = true,
 }: {
   availablePhotos: AdminGalleryPhoto[];
   albumPhotos: AlbumPhotoView[];
   photos: AdminGalleryPhoto[];
   selectedAlbumSlug: string;
   selectedPhotoIds: Set<string>;
+  selectionAnchorId: string | null;
   albumDraft: AlbumDraft;
   photoDrafts: Record<string, PhotoDraft>;
   catalog: PhotoMetadataCatalog;
@@ -908,11 +943,16 @@ function AlbumEditWorkspace({
   editorClass: string;
   optionsClass: string;
   animated?: boolean;
+  showAlbumFields?: boolean;
 }) {
   const [existingPhotoId, setExistingPhotoId] = useState('');
+  const [editorSurface, setEditorSurface] = useState<AlbumEditSurface>('photos');
+  const [draggedPhotoId, setDraggedPhotoId] = useState<string | null>(null);
   const reducedMotion = useReducedMotion();
   const isNew = !selectedAlbumSlug;
   const empty = albumPhotos.length === 0;
+  const orderedPhotoIds = albumPhotos.map((photo) => photo.id);
+  const allAlbumPhotosSelected = orderedPhotoIds.length > 0 && orderedPhotoIds.every((id) => selectedPhotoIds.has(id));
   const shouldAnimate = animated && !reducedMotion;
   const itemMotion = shouldAnimate ? { variants: staggerItemVariants } : {};
   const previewUrls = useAccountPhotoPreviewUrls(albumPhotos, accessToken);
@@ -945,11 +985,60 @@ function AlbumEditWorkspace({
   const selectedPendingGalleryCount = albumPhotos.filter(
     (photo) => selectedPhotoIds.has(photo.id) && photo.galleryStatus === 'pending',
   ).length;
+  const editorSurfaceMotionProps = shouldAnimate
+    ? {
+        initial: { opacity: 0, x: editorSurface === 'details' ? 14 : -14 },
+        animate: { opacity: 1, x: 0, transition: { duration: 0.22, ease: ALBUM_MODE_EASE } },
+        exit: { opacity: 0, x: editorSurface === 'details' ? -10 : 10, transition: { duration: 0.14, ease: ALBUM_MODE_EASE } },
+      }
+    : { initial: false };
 
   const addExistingPhoto = () => {
     if (!existingPhotoId) return;
     setAlbumDraft((current) => addPhotosToAlbumDraft(current, [existingPhotoId]));
     setExistingPhotoId('');
+  };
+
+  const setAllAlbumPhotosSelected = (checked: boolean) => {
+    setSelectedPhotoIds(checked ? new Set(orderedPhotoIds) : new Set());
+    setSelectionAnchorId(checked ? orderedPhotoIds[0] ?? null : null);
+  };
+
+  const toggleAlbumPhotoSelection = (photoId: string, shiftKey: boolean) => {
+    const nextChecked = !selectedPhotoIds.has(photoId);
+    const { next, anchor } = updatePhotoSelection(
+      selectedPhotoIds,
+      orderedPhotoIds,
+      photoId,
+      nextChecked,
+      shiftKey,
+      selectionAnchorId,
+    );
+    setSelectedPhotoIds(next);
+    setSelectionAnchorId(anchor);
+  };
+
+  const removePhotoFromAlbum = (photoId: string) => {
+    setAlbumDraft((current) => ({
+      ...current,
+      photos: current.photos.filter((item) => item.photoId !== photoId),
+      coverPhotoId: current.coverPhotoId === photoId ? '' : current.coverPhotoId,
+    }));
+    setSelectedPhotoIds((current) => toggleSetValue(current, photoId, false));
+  };
+
+  const reorderAlbumPhoto = (photoId: string, targetPhotoId: string) => {
+    if (photoId === targetPhotoId) return;
+    setAlbumDraft((current) => {
+      const nextPhotos = [...current.photos];
+      const from = nextPhotos.findIndex((item) => item.photoId === photoId);
+      const to = nextPhotos.findIndex((item) => item.photoId === targetPhotoId);
+      if (from < 0 || to < 0) return current;
+      const [moved] = nextPhotos.splice(from, 1);
+      if (!moved) return current;
+      nextPhotos.splice(to, 0, moved);
+      return { ...current, photos: nextPhotos };
+    });
   };
 
   useEffect(() => {
@@ -998,96 +1087,90 @@ function AlbumEditWorkspace({
         animate={shouldAnimate ? 'center' : undefined}
         exit={shouldAnimate ? 'exit' : undefined}
       >
-        <motion.section className="space-y-4" {...itemMotion}>
-          <input
-            value={albumDraft.title}
-            onChange={(event) => setAlbumDraft((current) => ({ ...current, title: event.target.value }))}
-            placeholder="Add a title"
-            className="w-full border-0 border-b border-line bg-transparent px-0 py-2 text-4xl font-bold tracking-tight text-fg outline-none placeholder:text-muted focus:border-line-strong"
-          />
-          <textarea
-            value={albumDraft.description}
-            onChange={(event) => setAlbumDraft((current) => ({ ...current, description: event.target.value }))}
-            rows={2}
-            placeholder="Add a description"
-            className="w-full resize-none border-0 border-b border-line bg-transparent px-0 py-2 text-sm outline-none placeholder:text-muted focus:border-line-strong"
-          />
-        </motion.section>
-
-        <motion.div {...itemMotion}>
-          <AlbumDropZone
-            empty={empty}
-            busy={busy}
-            onChoose={() => fileInputRef.current?.click()}
-            onFiles={(files) => void uploadFiles(files)}
-          />
-        </motion.div>
-
-        {albumPhotos.length > 0 && (
-          <motion.section className="space-y-3" {...itemMotion}>
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <div className="text-sm font-bold">Album photos</div>
-                <div className="label mt-1">{albumPhotos.length} selected for this album</div>
-              </div>
-              <Button onClick={() => fileInputRef.current?.click()} disabled={busy}>
-                <Upload size={14} strokeWidth={1.5} />
-                Choose images
-              </Button>
-            </div>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
-              {albumPhotos.map((photo) => (
-                <div key={photo.id} className="group relative border border-line">
-                  <AccountPhotoImage photo={photo} accessToken={accessToken} className="aspect-square w-full object-cover grayscale" />
-                  <button
-                    type="button"
-                    onClick={() => setAlbumDraft((current) => ({
-                      ...current,
-                      photos: current.photos.filter((item) => item.photoId !== photo.id),
-                      coverPhotoId: current.coverPhotoId === photo.id ? '' : current.coverPhotoId,
-                    }))}
-                    className="absolute right-1 top-1 flex h-7 w-7 items-center justify-center border border-line bg-surface/90 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100"
-                    aria-label={`Remove ${photo.title}`}
-                  >
-                    <X size={13} strokeWidth={1.5} />
-                  </button>
-                  {albumDraft.coverPhotoId === photo.id && (
-                    <div className="absolute bottom-1 left-1 border border-line bg-surface/90 px-1.5 py-1 text-[10px] uppercase tracking-wide">
-                      Cover
-                    </div>
-                  )}
-                  {photo.visibility === 'hidden' && (
-                    <div className="absolute bottom-1 right-1 border border-line bg-surface/90 px-1.5 py-1 text-[10px] uppercase tracking-wide">
-                      Hidden
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
+        {showAlbumFields && (
+          <motion.section className="space-y-4" {...itemMotion}>
+            <input
+              value={albumDraft.title}
+              onChange={(event) => setAlbumDraft((current) => ({ ...current, title: event.target.value }))}
+              placeholder="Add a title"
+              className="w-full border-0 border-b border-line bg-transparent px-0 py-2 text-4xl font-bold tracking-tight text-fg outline-none placeholder:text-muted focus:border-line-strong"
+            />
+            <textarea
+              value={albumDraft.description}
+              onChange={(event) => setAlbumDraft((current) => ({ ...current, description: event.target.value }))}
+              rows={2}
+              placeholder="Add a description"
+              className="w-full resize-none border-0 border-b border-line bg-transparent px-0 py-2 text-sm outline-none placeholder:text-muted focus:border-line-strong"
+            />
           </motion.section>
         )}
 
         <motion.section className="space-y-3" {...itemMotion}>
-          <div>
-            <div className="text-sm font-bold">Photo details</div>
-            <div className="label mt-1">
-              Edit metadata in bulk before saving the album or submitting photos to the public gallery.
-            </div>
-          </div>
-          <Suspense fallback={<div className="border border-line bg-faint px-3 py-8 text-center text-xs text-muted">Loading metadata grid...</div>}>
-            <PhotoMetadataGrid
-              rows={metadataRows}
-              context="album"
-              catalog={catalog}
-              onRowsChange={setMetadataRows}
-              selectedRowIds={selectedPhotoIds}
-              onSelectedRowIdsChange={(ids) => {
-                setSelectedPhotoIds(ids);
-                setSelectionAnchorId(ids.values().next().value ?? null);
-              }}
-              readonlyColumns={['galleryStatus']}
-            />
-          </Suspense>
+          <AlbumEditorSurfaceBar
+            surface={editorSurface}
+            photoCount={albumPhotos.length}
+            selectedCount={selectedPhotoIds.size}
+            allSelected={allAlbumPhotosSelected}
+            busy={busy}
+            onSurface={setEditorSurface}
+            onSelectAll={() => setAllAlbumPhotosSelected(!allAlbumPhotosSelected)}
+            onChooseImages={() => fileInputRef.current?.click()}
+          />
+
+          <AnimatePresence initial={false} mode="wait">
+            {editorSurface === 'photos' ? (
+              <motion.div key="album-editor-photos" className="space-y-3" {...editorSurfaceMotionProps}>
+                <AlbumDropZone
+                  empty={empty}
+                  busy={busy}
+                  onChoose={() => fileInputRef.current?.click()}
+                  onFiles={(files) => void uploadFiles(files)}
+                />
+                {albumPhotos.length > 0 && (
+                  <AlbumEditablePhotoGrid
+                    photos={albumPhotos}
+                    accessToken={accessToken}
+                    selectedPhotoIds={selectedPhotoIds}
+                    coverPhotoId={albumDraft.coverPhotoId}
+                    draggedPhotoId={draggedPhotoId}
+                    onToggleSelection={toggleAlbumPhotoSelection}
+                    onRemove={removePhotoFromAlbum}
+                    onDragStart={setDraggedPhotoId}
+                    onDrop={(photoId, targetPhotoId) => {
+                      reorderAlbumPhoto(photoId, targetPhotoId);
+                      setDraggedPhotoId(null);
+                    }}
+                    onDragEnd={() => setDraggedPhotoId(null)}
+                  />
+                )}
+              </motion.div>
+            ) : (
+              <motion.section key="album-editor-details" className="space-y-3" {...editorSurfaceMotionProps}>
+                <div>
+                  <div className="text-sm font-bold">Photo details</div>
+                  <div className="label mt-1">
+                    Bulk spreadsheet edits stay staged until Save.
+                  </div>
+                </div>
+                <Suspense fallback={<div className="border border-line bg-faint px-3 py-8 text-center text-xs text-muted">Loading metadata grid...</div>}>
+                  <PhotoMetadataGrid
+                    rows={metadataRows}
+                    context="album"
+                    catalog={catalog}
+                    onRowsChange={setMetadataRows}
+                    selectedRowIds={selectedPhotoIds}
+                    onSelectedRowIdsChange={(ids) => {
+                      setSelectedPhotoIds(ids);
+                      setSelectionAnchorId(ids.values().next().value ?? null);
+                    }}
+                    readonlyColumns={['galleryStatus']}
+                    minHeight={360}
+                    maxHeight={760}
+                  />
+                </Suspense>
+              </motion.section>
+            )}
+          </AnimatePresence>
         </motion.section>
       </motion.main>
 
@@ -1219,10 +1302,162 @@ function AlbumEditWorkspace({
   );
 }
 
+function AlbumEditorSurfaceBar({
+  surface,
+  photoCount,
+  selectedCount,
+  allSelected,
+  busy,
+  onSurface,
+  onSelectAll,
+  onChooseImages,
+}: {
+  surface: AlbumEditSurface;
+  photoCount: number;
+  selectedCount: number;
+  allSelected: boolean;
+  busy: boolean;
+  onSurface: (surface: AlbumEditSurface) => void;
+  onSelectAll: () => void;
+  onChooseImages: () => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 border border-line px-3 py-2.5">
+      <div className="text-xs text-muted">
+        {selectedCount > 0 ? `${selectedCount} selected` : `${photoCount} album photo${photoCount === 1 ? '' : 's'}`}
+      </div>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <div className="mr-1 flex border border-line">
+          <ActionIconButton label="Arrange photos" active={surface === 'photos'} onClick={() => onSurface('photos')}>
+            <Grid3X3 size={14} strokeWidth={1.5} />
+          </ActionIconButton>
+          <ActionIconButton label="Edit details" active={surface === 'details'} onClick={() => onSurface('details')}>
+            <Rows3 size={14} strokeWidth={1.5} />
+          </ActionIconButton>
+        </div>
+        {photoCount > 0 && (
+          <ActionTextButton
+            label={allSelected ? 'Clear photo selection' : 'Select all album photos'}
+            active={allSelected}
+            onClick={onSelectAll}
+          >
+            {allSelected ? <Check size={13} strokeWidth={1.7} /> : <Square size={13} strokeWidth={1.6} />}
+            Select all
+          </ActionTextButton>
+        )}
+        <ActionIconButton label="Choose images" onClick={onChooseImages} disabled={busy}>
+          <Upload size={14} strokeWidth={1.5} />
+        </ActionIconButton>
+      </div>
+    </div>
+  );
+}
+
+function AlbumEditablePhotoGrid({
+  photos,
+  accessToken,
+  selectedPhotoIds,
+  coverPhotoId,
+  draggedPhotoId,
+  onToggleSelection,
+  onRemove,
+  onDragStart,
+  onDrop,
+  onDragEnd,
+}: {
+  photos: AlbumPhotoView[];
+  accessToken: string | null;
+  selectedPhotoIds: Set<string>;
+  coverPhotoId: string;
+  draggedPhotoId: string | null;
+  onToggleSelection: (photoId: string, shiftKey: boolean) => void;
+  onRemove: (photoId: string) => void;
+  onDragStart: (photoId: string) => void;
+  onDrop: (photoId: string, targetPhotoId: string) => void;
+  onDragEnd: () => void;
+}) {
+  return (
+    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+      {photos.map((photo, index) => {
+        const selected = selectedPhotoIds.has(photo.id);
+        const dragging = draggedPhotoId === photo.id;
+        return (
+          <div
+            key={photo.id}
+            role="button"
+            tabIndex={0}
+            draggable={photos.length > 1}
+            aria-grabbed={dragging}
+            onClick={(event) => {
+              if ((event.target as HTMLElement).closest('button')) return;
+              onToggleSelection(photo.id, event.shiftKey);
+            }}
+            onKeyDown={(event) => {
+              if (event.key !== 'Enter' && event.key !== ' ') return;
+              event.preventDefault();
+              onToggleSelection(photo.id, event.shiftKey);
+            }}
+            onDragStart={(event) => {
+              event.dataTransfer.effectAllowed = 'move';
+              onDragStart(photo.id);
+            }}
+            onDragOver={(event) => {
+              if (!draggedPhotoId || draggedPhotoId === photo.id) return;
+              event.preventDefault();
+              event.dataTransfer.dropEffect = 'move';
+            }}
+            onDrop={(event) => {
+              event.preventDefault();
+              if (!draggedPhotoId) return;
+              onDrop(draggedPhotoId, photo.id);
+            }}
+            onDragEnd={onDragEnd}
+            className={[
+              'group relative border bg-surface outline-none transition-[border-color,opacity,transform]',
+              selected ? 'border-fg' : 'border-line hover:border-line-strong focus-visible:border-line-strong',
+              dragging ? 'opacity-45' : '',
+            ].join(' ')}
+          >
+            <AccountPhotoImage photo={photo} accessToken={accessToken} className="aspect-square w-full object-cover" />
+            <SelectionPill
+              selected={selected}
+              label={`Select ${photo.title}`}
+              onClick={(event) => onToggleSelection(photo.id, event.shiftKey)}
+              className="absolute left-2 top-2"
+            />
+            <button
+              type="button"
+              onClick={() => onRemove(photo.id)}
+              className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center border border-line bg-surface/90 opacity-100 transition-opacity hover:border-line-strong md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100"
+              aria-label={`Remove ${photo.title}`}
+            >
+              <X size={13} strokeWidth={1.5} />
+            </button>
+            <div className="absolute bottom-2 left-2 border border-line bg-surface/90 px-1.5 py-1 text-[10px] uppercase tracking-wide">
+              {String(index + 1).padStart(2, '0')}
+            </div>
+            {coverPhotoId === photo.id && (
+              <div className="absolute bottom-2 right-2 border border-line bg-surface/90 px-1.5 py-1 text-[10px] uppercase tracking-wide">
+                Cover
+              </div>
+            )}
+            {photo.visibility === 'hidden' && (
+              <div className="absolute right-2 top-12 border border-line bg-surface/90 px-1.5 py-1 text-[10px] uppercase tracking-wide">
+                Hidden
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function AlbumViewer({
   albums,
   photos,
   availablePhotos,
+  albumPhotos,
   selectedAlbum,
   isNewRoute,
   detailMode,
@@ -1265,6 +1500,7 @@ function AlbumViewer({
   albums: GalleryAlbum[];
   photos: AdminGalleryPhoto[];
   availablePhotos: AdminGalleryPhoto[];
+  albumPhotos: AlbumPhotoView[];
   selectedAlbum: GalleryAlbum | null;
   isNewRoute: boolean;
   detailMode: AlbumDefaultMode;
@@ -1417,10 +1653,10 @@ function AlbumViewer({
               className="transition-colors hover:text-fg"
               title="Back to albums"
             >
-              Albums
+              ALBUMS
             </button>
             <ChevronRight size={12} strokeWidth={1.5} />
-            <span className="text-fg">{selectedAlbum.title}</span>
+            <span className="text-fg">{selectedAlbum.title.toUpperCase()}</span>
           </div>
 
           <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
@@ -1500,20 +1736,36 @@ function AlbumViewer({
                 setViewPhotoId={setViewPhotoId}
                 showTitles={preferences.showPhotoTitles}
                 color
+                selectionVisibility="hover"
               />
             </motion.div>
           ) : (
             <motion.div
               key="album-edit"
               {...modeMotionProps}
-              className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_18rem] xl:items-start"
+              className="grid min-h-0 gap-4 xl:grid-cols-[14rem_minmax(0,1fr)_18rem] xl:items-start"
             >
+              <motion.aside
+                className="space-y-3 xl:sticky xl:top-0"
+                initial={reducedMotion ? false : { opacity: 0, x: -18 }}
+                animate={reducedMotion ? undefined : { opacity: 1, x: 0, transition: { duration: 0.24, ease: ALBUM_MODE_EASE } }}
+                exit={reducedMotion ? undefined : { opacity: 0, x: -12, transition: { duration: 0.16, ease: ALBUM_MODE_EASE } }}
+              >
+                <AlbumNav
+                  albums={albums}
+                  selectedAlbumSlug={selectedAlbum.slug}
+                  listClassName="divide-y divide-line border border-line"
+                  onSelectAlbum={openAlbum}
+                  onNewAlbum={startNewAlbum}
+                />
+              </motion.aside>
               <AlbumEditWorkspace
                 availablePhotos={availablePhotos}
-                albumPhotos={selectedAlbumPhotos}
+                albumPhotos={albumPhotos}
                 photos={photos}
                 selectedAlbumSlug={selectedAlbum.slug}
                 selectedPhotoIds={selectedPhotoIds}
+                selectionAnchorId={selectionAnchorId}
                 albumDraft={albumDraft}
                 photoDrafts={photoDrafts}
                 catalog={catalog}
@@ -1533,6 +1785,7 @@ function AlbumViewer({
                 editorClass="min-w-0 space-y-5"
                 optionsClass="space-y-4"
                 animated
+                showAlbumFields={false}
               />
             </motion.div>
           )}
@@ -1566,22 +1819,33 @@ function AlbumViewer({
           onSelectAll={() => setAllVisible(!allVisibleSelected)}
         />
         <div className="columns-2 gap-3 sm:columns-3 xl:columns-4">
-          {photos.map((photo) => (
-            <div key={photo.id} className="mb-3 break-inside-avoid border border-line">
+          {photos.map((photo) => {
+            const selected = selectedPhotoIds.has(photo.id);
+            return (
+            <div key={photo.id} className="group mb-3 break-inside-avoid border border-line">
               <div className="relative">
                 <button
                   type="button"
-                  onClick={() => setViewPhotoId(photo.id)}
+                  onClick={(event) => {
+                    if (event.shiftKey) {
+                      togglePhotoSelection(photo.id, photos.map((item) => item.id), true);
+                      return;
+                    }
+                    setViewPhotoId(photo.id);
+                  }}
                   className="block w-full text-left"
                   aria-label={`Open ${photo.title}`}
                 >
                   <AccountPhotoImage photo={photo} accessToken={accessToken} className="w-full object-cover" />
                 </button>
                 <SelectionPill
-                  selected={selectedPhotoIds.has(photo.id)}
+                  selected={selected}
                   label={`Select ${photo.title}`}
                   onClick={(event) => togglePhotoSelection(photo.id, photos.map((item) => item.id), event.shiftKey)}
-                  className="absolute left-2 top-2"
+                  className={[
+                    'absolute left-2 top-2',
+                    selected ? '' : 'opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100',
+                  ].join(' ')}
                 />
               </div>
               {preferences.showPhotoTitles && (
@@ -1590,7 +1854,8 @@ function AlbumViewer({
                 </div>
               )}
             </div>
-          ))}
+            );
+          })}
           {photos.length === 0 && (
             <div className="border border-line px-6 py-12 text-center text-xs text-muted">
               No images uploaded yet.
@@ -1986,6 +2251,7 @@ function PhotoGrid({
   setViewPhotoId,
   showTitles,
   color,
+  selectionVisibility = 'always',
 }: {
   photos: AdminGalleryPhoto[];
   accessToken: string | null;
@@ -1994,26 +2260,38 @@ function PhotoGrid({
   setViewPhotoId: Dispatch<SetStateAction<string | null>>;
   showTitles: boolean;
   color: boolean;
+  selectionVisibility?: 'always' | 'hover';
 }) {
   const orderedIds = photos.map((photo) => photo.id);
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-      {photos.map((photo) => (
-        <div key={photo.id} className="border border-line">
+      {photos.map((photo) => {
+        const selected = selectedPhotoIds.has(photo.id);
+        const selectionClass = selectionVisibility === 'hover' && !selected
+          ? 'absolute left-2 top-2 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100'
+          : 'absolute left-2 top-2';
+        return (
+        <div key={photo.id} className="group border border-line">
           <div className="relative">
             <button
               type="button"
-              onClick={() => setViewPhotoId(photo.id)}
+              onClick={(event) => {
+                if (event.shiftKey) {
+                  onToggleSelection(photo.id, orderedIds, true);
+                  return;
+                }
+                setViewPhotoId(photo.id);
+              }}
               className="block w-full text-left"
               aria-label={`Open ${photo.title}`}
             >
               <AccountPhotoImage photo={photo} accessToken={accessToken} className={['aspect-square w-full object-cover', color ? '' : 'grayscale'].join(' ')} />
             </button>
             <SelectionPill
-              selected={selectedPhotoIds.has(photo.id)}
+              selected={selected}
               label={`Select ${photo.title}`}
               onClick={(event) => onToggleSelection(photo.id, orderedIds, event.shiftKey)}
-              className="absolute left-2 top-2"
+              className={selectionClass}
             />
             {'visibility' in photo && photo.visibility === 'hidden' && (
               <div className="absolute bottom-2 right-2 border border-line bg-surface/90 px-1.5 py-1 text-[10px] uppercase tracking-wide">
@@ -2027,7 +2305,8 @@ function PhotoGrid({
             </div>
           )}
         </div>
-      ))}
+        );
+      })}
       {photos.length === 0 && (
         <div className="col-span-full border border-line px-6 py-12 text-center text-xs text-muted">
           No photos here yet.

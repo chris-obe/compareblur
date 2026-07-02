@@ -97,6 +97,57 @@ const emptySelection = (): GridSelection => ({
   rows: CompactSelection.empty(),
 });
 
+const DEFAULT_METADATA_GRID_THEME = {
+  accentColor: '#0a0a0a',
+  accentFg: '#ffffff',
+  bgCell: '#ffffff',
+  bgCellMedium: '#f4f4f4',
+  bgHeader: '#f4f4f4',
+  bgHeaderHovered: '#e5e5e5',
+  bgHeaderHasFocus: '#e5e5e5',
+  textDark: '#0a0a0a',
+  textMedium: '#6b6b6b',
+  textHeader: '#6b6b6b',
+  borderColor: '#e5e5e5',
+  fontFamily: 'Helvetica Neue, Helvetica, Arial, sans-serif',
+  headerFontStyle: '10px Helvetica Neue, Helvetica, Arial, sans-serif',
+  baseFontStyle: '12px Helvetica Neue, Helvetica, Arial, sans-serif',
+};
+
+function resolveMetadataGridTheme() {
+  if (typeof window === 'undefined') return DEFAULT_METADATA_GRID_THEME;
+  const styles = window.getComputedStyle(document.documentElement);
+  const read = (name: string, fallback: string) => styles.getPropertyValue(name).trim() || fallback;
+  return {
+    ...DEFAULT_METADATA_GRID_THEME,
+    accentColor: read('--fg', DEFAULT_METADATA_GRID_THEME.accentColor),
+    accentFg: read('--bg', DEFAULT_METADATA_GRID_THEME.accentFg),
+    bgCell: read('--surface', DEFAULT_METADATA_GRID_THEME.bgCell),
+    bgCellMedium: read('--faint', DEFAULT_METADATA_GRID_THEME.bgCellMedium),
+    bgHeader: read('--faint', DEFAULT_METADATA_GRID_THEME.bgHeader),
+    bgHeaderHovered: read('--line', DEFAULT_METADATA_GRID_THEME.bgHeaderHovered),
+    bgHeaderHasFocus: read('--line', DEFAULT_METADATA_GRID_THEME.bgHeaderHasFocus),
+    textDark: read('--fg', DEFAULT_METADATA_GRID_THEME.textDark),
+    textMedium: read('--muted', DEFAULT_METADATA_GRID_THEME.textMedium),
+    textHeader: read('--muted', DEFAULT_METADATA_GRID_THEME.textHeader),
+    borderColor: read('--line', DEFAULT_METADATA_GRID_THEME.borderColor),
+  };
+}
+
+function useMetadataGridTheme() {
+  const [theme, setTheme] = useState(DEFAULT_METADATA_GRID_THEME);
+
+  useEffect(() => {
+    const update = () => setTheme(resolveMetadataGridTheme());
+    update();
+    const observer = new MutationObserver(update);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    return () => observer.disconnect();
+  }, []);
+
+  return theme;
+}
+
 export function PhotoMetadataGrid({
   rows,
   context,
@@ -112,6 +163,7 @@ export function PhotoMetadataGrid({
 }: Props) {
   const readonly = useMemo(() => new Set<PhotoMetadataColumnKey>(['preview', ...readonlyColumns]), [readonlyColumns]);
   const columns = useMemo(() => columnsForContext(context), [context]);
+  const gridTheme = useMetadataGridTheme();
   const gridColumns = useMemo<GridColumn[]>(
     () => columns.map((column) => ({ id: column.key, title: column.title, width: column.width, grow: column.grow })),
     [columns],
@@ -246,22 +298,7 @@ export function PhotoMetadataGrid({
         }}
         smoothScrollX
         smoothScrollY
-        theme={{
-          accentColor: 'var(--fg)',
-          accentFg: 'var(--bg)',
-          bgCell: 'var(--surface)',
-          bgCellMedium: 'var(--faint)',
-          bgHeader: 'var(--faint)',
-          bgHeaderHovered: 'var(--line)',
-          bgHeaderHasFocus: 'var(--line)',
-          textDark: 'var(--fg)',
-          textMedium: 'var(--muted)',
-          textHeader: 'var(--muted)',
-          borderColor: 'var(--line)',
-          fontFamily: 'Helvetica Neue, Helvetica, Arial, sans-serif',
-          headerFontStyle: '10px Helvetica Neue, Helvetica, Arial, sans-serif',
-          baseFontStyle: '12px Helvetica Neue, Helvetica, Arial, sans-serif',
-        }}
+        theme={gridTheme}
       />
     </div>
   );
