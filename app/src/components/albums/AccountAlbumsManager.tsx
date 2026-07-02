@@ -83,6 +83,9 @@ import {
 import { EmbedCodeDialog } from '../embed/EmbedCodeDialog';
 import { PhotoLightbox } from '../lightbox/PhotoLightbox';
 import { Button } from '../ui/Button';
+import { ErrorBanner } from '../ui/ErrorBanner';
+import { Select } from '../ui/Select';
+import { TextField } from '../ui/TextField';
 
 const PhotoMetadataGrid = lazy(() => import('../gallery/metadata/PhotoMetadataGrid').then((module) => ({ default: module.PhotoMetadataGrid })));
 const ALBUM_MODE_EASE = [0.22, 1, 0.36, 1] as const;
@@ -1219,13 +1222,14 @@ function AlbumEditWorkspace({
               />
             </div>
           </div>
-          <TextField
-            label="Slug"
-            value={albumDraft.slug}
-            onChange={(value) => setAlbumDraft((current) => ({ ...current, slug: value }))}
-            placeholder="Generated from title"
-            className="mt-3"
-          />
+          <div className="mt-3">
+            <TextField
+              label="Slug"
+              value={albumDraft.slug}
+              onValueChange={(value) => setAlbumDraft((current) => ({ ...current, slug: value }))}
+              placeholder="Generated from title"
+            />
+          </div>
           <label className="mt-3 block">
             <span className="label mb-2 block">Album password</span>
             <input
@@ -1257,36 +1261,35 @@ function AlbumEditWorkspace({
               Public link: /g/{albumDraft.slug || selectedAlbumSlug}
             </div>
           )}
-          <label className="mt-3 block">
-            <span className="label mb-2 block">Cover</span>
-            <select
+          <div className="mt-3">
+            <Select
+              label="Cover"
               value={albumDraft.coverPhotoId}
-              onChange={(event) => setAlbumDraft((current) => ({ ...current, coverPhotoId: event.target.value }))}
-              className="h-9 w-full border border-line bg-transparent px-2 text-xs outline-none focus:border-line-strong"
-            >
-              <option value="">Auto</option>
-              {albumPhotos.map((photo) => (
-                <option key={photo.id} value={photo.id}>{photo.title}</option>
-              ))}
-            </select>
-          </label>
+              onValueChange={(value) => setAlbumDraft((current) => ({ ...current, coverPhotoId: value }))}
+              options={[
+                { value: '', label: 'Auto' },
+                ...albumPhotos.map((photo) => ({ value: photo.id, label: photo.title })),
+              ]}
+            />
+          </div>
           {availablePhotos.length > 0 && (
-            <label className="mt-3 block">
+            <div className="mt-3">
               <span className="label mb-2 block">Add existing photo</span>
               <div className="flex gap-2">
-                <select
-                  value={existingPhotoId}
-                  onChange={(event) => setExistingPhotoId(event.target.value)}
-                  className="h-9 min-w-0 flex-1 border border-line bg-transparent px-2 text-xs outline-none focus:border-line-strong"
-                >
-                  <option value="">Choose</option>
-                  {availablePhotos.map((photo) => (
-                    <option key={photo.id} value={photo.id}>{photo.title}</option>
-                  ))}
-                </select>
+                <div className="min-w-0 flex-1">
+                  <Select
+                    value={existingPhotoId}
+                    onValueChange={setExistingPhotoId}
+                    aria-label="Add existing photo"
+                    options={[
+                      { value: '', label: 'Choose' },
+                      ...availablePhotos.map((photo) => ({ value: photo.id, label: photo.title })),
+                    ]}
+                  />
+                </div>
                 <Button onClick={addExistingPhoto} disabled={!existingPhotoId}>Add</Button>
               </div>
-            </label>
+            </div>
           )}
         </motion.section>
 
@@ -2225,32 +2228,28 @@ function AlbumPreferencesPanel({
         <div className="text-sm font-bold">Album display</div>
       </div>
       <div className="grid gap-3 md:grid-cols-3">
-        <label className="block">
-          <span className="label mb-2 block">Card subtitle</span>
-          <select
-            value={preferences.albumSubtitle}
-            onChange={(event) => onChange((current) => ({ ...current, albumSubtitle: event.target.value as AlbumSubtitleField }))}
-            className="h-9 w-full border border-line bg-transparent px-2 text-xs outline-none focus:border-line-strong"
-          >
-            <option value="updated">Updated date</option>
-            <option value="created">Created date</option>
-            <option value="published">Published date</option>
-            <option value="photo-count">Photo count</option>
-            <option value="status">Status</option>
-            <option value="description">Description</option>
-          </select>
-        </label>
-        <label className="block">
-          <span className="label mb-2 block">Opening mode</span>
-          <select
-            value={preferences.defaultAlbumMode}
-            onChange={(event) => onChange((current) => ({ ...current, defaultAlbumMode: event.target.value as AlbumDefaultMode }))}
-            className="h-9 w-full border border-line bg-transparent px-2 text-xs outline-none focus:border-line-strong"
-          >
-            <option value="view">View</option>
-            <option value="edit">Edit</option>
-          </select>
-        </label>
+        <Select
+          label="Card subtitle"
+          value={preferences.albumSubtitle}
+          onValueChange={(value) => onChange((current) => ({ ...current, albumSubtitle: value as AlbumSubtitleField }))}
+          options={[
+            { value: 'updated', label: 'Updated date' },
+            { value: 'created', label: 'Created date' },
+            { value: 'published', label: 'Published date' },
+            { value: 'photo-count', label: 'Photo count' },
+            { value: 'status', label: 'Status' },
+            { value: 'description', label: 'Description' },
+          ]}
+        />
+        <Select
+          label="Opening mode"
+          value={preferences.defaultAlbumMode}
+          onValueChange={(value) => onChange((current) => ({ ...current, defaultAlbumMode: value as AlbumDefaultMode }))}
+          options={[
+            { value: 'view', label: 'View' },
+            { value: 'edit', label: 'Edit' },
+          ]}
+        />
         <label className="flex items-end gap-2 pb-2 text-xs">
           <input
             type="checkbox"
@@ -2391,32 +2390,6 @@ function AccountLightboxInfo({
   );
 }
 
-function TextField({
-  label,
-  value,
-  onChange,
-  placeholder,
-  className = '',
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  placeholder?: string;
-  className?: string;
-}) {
-  return (
-    <label className={`block ${className}`}>
-      <span className="label mb-2 block">{label}</span>
-      <input
-        value={value}
-        placeholder={placeholder}
-        onChange={(event) => onChange(event.target.value)}
-        className="h-9 w-full border border-line bg-transparent px-2 text-xs outline-none focus:border-line-strong"
-      />
-    </label>
-  );
-}
-
 function VisibilityChoiceButton({
   active,
   icon,
@@ -2450,10 +2423,6 @@ function SummaryRow({ label, value }: { label: string; value: string }) {
       <dd className="text-right font-bold">{value}</dd>
     </div>
   );
-}
-
-function ErrorBanner({ message }: { message: string }) {
-  return <div className="border border-line bg-faint p-3 text-xs">{message}</div>;
 }
 
 function UploadProgress({ progress }: { progress: ImageProcessingProgress }) {

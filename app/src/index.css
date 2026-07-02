@@ -80,6 +80,14 @@ body {
   color: var(--muted);
 }
 
+/* Inline variant of .label for text inside flowing rows (keeps line-height) */
+.micro-label {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
 /* Thin custom scrollbars to keep the clean look */
 * {
   scrollbar-width: thin;

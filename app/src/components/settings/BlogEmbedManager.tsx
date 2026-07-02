@@ -42,6 +42,10 @@ import {
 import { EmbedGalleryCard } from '../embed/EmbedGalleryCard';
 import { PhotoEmbedCard } from '../embed/PhotoEmbedCard';
 import { Button } from '../ui/Button';
+import { Panel } from '../ui/Panel';
+import { Select } from '../ui/Select';
+import { ToggleRow } from '../ui/ToggleRow';
+import { useCopyToClipboard } from '../../hooks/useCopyToClipboard';
 
 export function BlogEmbedManager() {
   // Server data comes from the shared query seam; `template` stays local state
@@ -57,7 +61,7 @@ export function BlogEmbedManager() {
   const [previewAlbumSlug, setPreviewAlbumSlug] = useState('');
   const [saving, setSaving] = useState(false);
   const [mutationError, setMutationError] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopyToClipboard();
   const [dragFieldId, setDragFieldId] = useState<EmbedFieldId | null>(null);
   const [dragSource, setDragSource] = useState<'visible' | 'hidden' | null>(null);
 
@@ -135,12 +139,7 @@ export function BlogEmbedManager() {
     setMutationError(null);
   };
 
-  const copyIframe = async () => {
-    if (!iframeCode) return;
-    await navigator.clipboard.writeText(iframeCode);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1200);
-  };
+  const copyIframe = () => void copy(iframeCode);
 
   const updateImageTemplate = <K extends keyof EmbedModeTemplate>(key: K, value: EmbedModeTemplate[K]) => {
     setTemplate((current) => updateTemplateMode(current, 'image', { [key]: value } as Partial<EmbedModeTemplate>));
@@ -411,31 +410,31 @@ export function BlogEmbedManager() {
                 label="Theme"
                 value={modeTemplate.theme}
                 options={['light', 'dark', 'system']}
-                onChange={(value) => updateModeTemplate('theme', value as EmbedModeTemplate['theme'])}
+                onValueChange={(value) => updateModeTemplate('theme', value as EmbedModeTemplate['theme'])}
               />
               <Select
                 label="Density"
                 value={modeTemplate.density}
                 options={['compact', 'comfortable']}
-                onChange={(value) => updateModeTemplate('density', value as EmbedModeTemplate['density'])}
+                onValueChange={(value) => updateModeTemplate('density', value as EmbedModeTemplate['density'])}
               />
               <Select
                 label="Frame"
                 value={modeTemplate.frameStyle}
                 options={['minimal', 'technical', 'editorial']}
-                onChange={(value) => updateModeTemplate('frameStyle', value as EmbedModeTemplate['frameStyle'])}
+                onValueChange={(value) => updateModeTemplate('frameStyle', value as EmbedModeTemplate['frameStyle'])}
               />
               <Select
                 label="Image fit"
                 value={modeTemplate.imageFit}
                 options={['cover', 'contain']}
-                onChange={(value) => updateModeTemplate('imageFit', value as EmbedModeTemplate['imageFit'])}
+                onValueChange={(value) => updateModeTemplate('imageFit', value as EmbedModeTemplate['imageFit'])}
               />
               <Select
                 label="Image position"
                 value={modeTemplate.imagePosition}
                 options={['auto', 'center', 'top', 'bottom']}
-                onChange={(value) => updateModeTemplate('imagePosition', value as EmbedModeTemplate['imagePosition'])}
+                onValueChange={(value) => updateModeTemplate('imagePosition', value as EmbedModeTemplate['imagePosition'])}
               />
 
               <div className="space-y-3 border border-line p-3">
@@ -475,17 +474,17 @@ export function BlogEmbedManager() {
                   label="Multi-image layout"
                   value={galleryTemplate.albumLayout}
                   options={['grid', 'carousel']}
-                  onChange={(value) => updateGalleryTemplate('albumLayout', value as EmbedGalleryModeTemplate['albumLayout'])}
+                  onValueChange={(value) => updateGalleryTemplate('albumLayout', value as EmbedGalleryModeTemplate['albumLayout'])}
                 />
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <NumberField
+                  <ClampedNumberField
                     label="Frames"
                     value={galleryTemplate.albumCount}
                     min={1}
                     max={24}
                     onChange={(value) => updateGalleryTemplate('albumCount', value)}
                   />
-                  <NumberField
+                  <ClampedNumberField
                     label="Grid columns"
                     value={galleryTemplate.albumColumns}
                     min={2}
@@ -610,15 +609,6 @@ export function BlogEmbedManager() {
   );
 }
 
-function Panel({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <section className="border border-line p-4">
-      <div className="label mb-3">{title}</div>
-      {children}
-    </section>
-  );
-}
-
 function ModeButton({
   active,
   icon,
@@ -645,24 +635,9 @@ function ModeButton({
   );
 }
 
-function Select({ label, value, options, onChange }: { label: string; value: string; options: string[]; onChange: (value: string) => void }) {
-  return (
-    <label className="block">
-      <span className="label mb-2 block">{label}</span>
-      <select
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="h-9 w-full border border-line bg-transparent px-2 text-xs outline-none focus:border-line-strong"
-      >
-        {options.map((option) => (
-          <option key={option} value={option}>{option}</option>
-        ))}
-      </select>
-    </label>
-  );
-}
-
-function NumberField({
+// Clamp-on-change integer input (distinct from ui/NumberField's free-typing
+// commit semantics — this one snaps immediately, which suits template ranges).
+function ClampedNumberField({
   label,
   value,
   min,
@@ -811,22 +786,6 @@ function clampInteger(value: number | string, min: number, max: number, fallback
 
 function cloneDefaultTemplate(): EmbedTemplate {
   return JSON.parse(JSON.stringify(DEFAULT_EMBED_TEMPLATE)) as EmbedTemplate;
-}
-
-function ToggleRow({ label, active, onToggle }: { label: string; active: boolean; onToggle: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onToggle}
-      className={[
-        'flex w-full items-center justify-between border px-2.5 py-2 text-left text-xs uppercase tracking-wide',
-        active ? 'border-fg bg-fg text-bg' : 'border-line text-muted hover:border-line-strong',
-      ].join(' ')}
-    >
-      <span>{label}</span>
-      <span>{active ? 'On' : 'Off'}</span>
-    </button>
-  );
 }
 
 function PlacementButton({

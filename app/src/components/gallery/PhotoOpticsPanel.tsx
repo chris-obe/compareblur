@@ -6,6 +6,7 @@ import { computeMatch } from '../../lib/match';
 import { subjectPresetById } from '../../lib/subjectDistance';
 import type { EmbedFieldId } from '../../lib/galleryApi';
 import type { Kit, ViewEntry } from '../../lib/types';
+import { Select } from '../ui/Select';
 
 const r1 = (n: number) => Math.round(n * 10) / 10;
 const DEFAULT_TARGET_FORMAT_ID = 'ff';
@@ -90,20 +91,14 @@ export function PhotoOpticsPanel({
   return (
     <div className="space-y-3 text-sm">
       {entry.guessed && (
-        <select
+        <Select
           value={format.id}
-          onChange={(event) => {
-            const next = options.find((f) => f.id === event.target.value);
+          onValueChange={(value) => {
+            const next = options.find((f) => f.id === value);
             if (next) setFormat(next);
           }}
-          className="h-9 w-full border border-line bg-transparent px-2 text-xs outline-none focus:border-line-strong"
-        >
-          {options.map((f) => (
-            <option key={f.id} value={f.id}>
-              {formatOptionLabel(f)}
-            </option>
-          ))}
-        </select>
+          options={options.map((f) => ({ value: f.id, label: formatOptionLabel(f) }))}
+        />
       )}
 
       {identityStats.length > 0 && (

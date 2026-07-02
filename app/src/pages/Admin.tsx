@@ -23,6 +23,8 @@ import {
 } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { Chip } from '../components/ui/Chip';
+import { Select } from '../components/ui/Select';
+import { useCopyToClipboard } from '../hooks/useCopyToClipboard';
 import { isDevAdminBypass } from '../auth/adminAccess';
 import { useAdminAccess } from '../auth/AdminAccessProvider';
 import { adminAuthorizationParams, adminTokenParams } from '../auth/config';
@@ -829,8 +831,8 @@ function CatalogDatasetViewer({
   const [pageSize, setPageSize] = useState(100);
   const [page, setPage] = useState(0);
   const [selectedRowKey, setSelectedRowKey] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
-  const [rowCopied, setRowCopied] = useState(false);
+  const { copied, copy: copyText } = useCopyToClipboard();
+  const { copied: rowCopied, copy: copyRowText } = useCopyToClipboard();
   const [cloudAutoLoadRequested, setCloudAutoLoadRequested] = useState(false);
 
   const selected = source === 'cloudflare' ? cloudCatalogExport : appCatalogRaw;
@@ -879,18 +881,11 @@ function CatalogDatasetViewer({
     }
   }, [cloudAutoLoadRequested, cloudCatalogExport, cloudCatalogLoading, onLoadCloudCatalog, source]);
 
-  const copyJson = async () => {
-    if (!jsonText) return;
-    await navigator.clipboard.writeText(jsonText);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1400);
-  };
+  const copyJson = () => void copyText(jsonText);
 
-  const copyRowJson = async () => {
+  const copyRowJson = () => {
     if (!selectedRow) return;
-    await navigator.clipboard.writeText(JSON.stringify(selectedRow.record, null, 2));
-    setRowCopied(true);
-    window.setTimeout(() => setRowCopied(false), 1400);
+    void copyRowText(JSON.stringify(selectedRow.record, null, 2));
   };
 
   const downloadJson = () => {
@@ -1179,14 +1174,15 @@ function CatalogExplorerToolbar({
     <div className="border border-line">
       <div className="flex flex-wrap items-end gap-2 p-2">
         <LabeledControl label="Viewing" className="min-w-[13rem] flex-[0_1_17rem]">
-          <select
+          <Select
+            size="sm"
             value={source}
-            onChange={(event) => onSourceChange(event.target.value as CatalogDatasetSource)}
-            className="h-8 w-full border border-line bg-transparent px-2 text-xs outline-none focus:border-line-strong"
-          >
-            <option value="cloudflare">Canonical Worker/R2 export</option>
-            <option value="app">App-loaded fallback/runtime export</option>
-          </select>
+            onValueChange={(value) => onSourceChange(value as CatalogDatasetSource)}
+            options={[
+              { value: 'cloudflare', label: 'Canonical Worker/R2 export' },
+              { value: 'app', label: 'App-loaded fallback/runtime export' },
+            ]}
+          />
           <span className="mt-1 block truncate text-[11px] text-muted">{selectedLabel}</span>
           <span className="block truncate text-[11px] text-muted">{selectedDetail}</span>
         </LabeledControl>
@@ -1656,62 +1652,45 @@ function CatalogTableControls({
       {structuredFilters && (
         <>
           <LabeledControl label="Source" className="w-36">
-            <select
+            <Select
+              size="sm"
               value={filters.primarySource}
-              onChange={(event) => onFilterChange('primarySource', event.target.value)}
-              className="h-8 w-full border border-line bg-transparent px-2 text-xs outline-none focus:border-line-strong"
-            >
-              <option value="">All</option>
-              {sourceOptions.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
+              onValueChange={(value) => onFilterChange('primarySource', value)}
+              options={[{ value: '', label: 'All' }, ...sourceOptions]}
+            />
           </LabeledControl>
 
           <LabeledControl label="Mount" className="w-32">
-            <select
+            <Select
+              size="sm"
               value={filters.mount}
-              onChange={(event) => onFilterChange('mount', event.target.value)}
-              className="h-8 w-full border border-line bg-transparent px-2 text-xs outline-none focus:border-line-strong"
-            >
-              <option value="">All</option>
-              {mountOptions.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
+              onValueChange={(value) => onFilterChange('mount', value)}
+              options={[{ value: '', label: 'All' }, ...mountOptions]}
+            />
           </LabeledControl>
 
           <LabeledControl label="Format" className="w-32">
-            <select
+            <Select
+              size="sm"
               value={filters.format}
-              onChange={(event) => onFilterChange('format', event.target.value)}
-              className="h-8 w-full border border-line bg-transparent px-2 text-xs outline-none focus:border-line-strong"
-            >
-              <option value="">All</option>
-              {formatOptions.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
+              onValueChange={(value) => onFilterChange('format', value)}
+              options={[{ value: '', label: 'All' }, ...formatOptions]}
+            />
           </LabeledControl>
 
           <LabeledControl label="Flag" className="w-32">
-            <select
+            <Select
+              size="sm"
               value={filters.flag}
-              onChange={(event) => onFilterChange('flag', event.target.value as CatalogFlagFilter)}
-              className="h-8 w-full border border-line bg-transparent px-2 text-xs outline-none focus:border-line-strong"
-            >
-              <option value="all">All</option>
-              <option value="fixed">Fixed lens</option>
-              <option value="af">AF</option>
-              <option value="manual">Manual</option>
-              <option value="thirdParty">Third-party</option>
-            </select>
+              onValueChange={(value) => onFilterChange('flag', value as CatalogFlagFilter)}
+              options={[
+                { value: 'all', label: 'All' },
+                { value: 'fixed', label: 'Fixed lens' },
+                { value: 'af', label: 'AF' },
+                { value: 'manual', label: 'Manual' },
+                { value: 'thirdParty', label: 'Third-party' },
+              ]}
+            />
           </LabeledControl>
         </>
       )}
@@ -1736,17 +1715,16 @@ function CatalogTableControls({
           />
           <span className="px-2 text-xs text-muted tabular-nums">/ {pageCount}</span>
         </div>
-        <select
-          value={pageSize}
-          onChange={(event) => onPageSizeChange(Number(event.target.value))}
-          aria-label="Rows per page"
-          title="Rows per page"
-          className="h-8 w-16 border border-line bg-transparent px-2 text-xs outline-none focus:border-line-strong"
-        >
-          <option value={50}>50</option>
-          <option value={100}>100</option>
-          <option value={250}>250</option>
-        </select>
+        <div className="w-16">
+          <Select
+            size="sm"
+            value={pageSize}
+            onValueChange={(value) => onPageSizeChange(Number(value))}
+            aria-label="Rows per page"
+            title="Rows per page"
+            options={['50', '100', '250']}
+          />
+        </div>
         <div className="flex h-8 border border-line">
           <TablePageButton label="First page" disabled={!canGoBack} onClick={() => onPageChange(0)}>
             <ChevronsLeft size={14} strokeWidth={1.5} />

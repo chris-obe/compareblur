@@ -10,6 +10,10 @@ import {
   type EmbedMode,
 } from '../../lib/embedSnippet';
 import { Button } from '../ui/Button';
+import { IconButton } from '../ui/IconButton';
+import { Modal } from '../ui/Modal';
+import { TextArea, TextField } from '../ui/TextField';
+import { useCopyToClipboard } from '../../hooks/useCopyToClipboard';
 
 type DialogMode = 'photo' | 'selection' | 'album';
 
@@ -39,7 +43,7 @@ export function EmbedCodeDialog({ mode, template, onClose, photo, albumSlug, alb
   const galleryTemplate = template.gallery;
   const [layout, setLayout] = useState<EmbedLayout>(galleryTemplate.albumLayout);
   const [count, setCount] = useState(galleryTemplate.albumCount);
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopyToClipboard();
 
   const { src, snippet } = useMemo(() => {
     const frames = mode === 'photo' ? 1 : mode === 'selection' ? photoIds.length : count;
@@ -62,40 +66,20 @@ export function EmbedCodeDialog({ mode, template, onClose, photo, albumSlug, alb
     };
   }, [mode, layout, count, photo, albumSlug, albumTitle, photoIds, imageTemplate.maxLongEdge, galleryTemplate.maxLongEdge, galleryTemplate.albumColumns]);
 
-  const copy = async () => {
-    if (!snippet) return;
-    await navigator.clipboard.writeText(snippet);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1200);
-  };
-
   const showLayout = mode !== 'photo';
   const showCount = mode === 'album';
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-      role="dialog"
-      aria-modal="true"
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-lg space-y-4 border border-line bg-bg p-5"
-        onClick={(event) => event.stopPropagation()}
-      >
+    <Modal onClose={onClose} labelledBy="embed-code-title">
+      <div className="space-y-4 p-5">
         <div className="flex items-start justify-between">
           <div>
             <div className="label">Blog embed</div>
-            <h3 className="text-base font-bold tracking-tight">{TITLES[mode]}</h3>
+            <h3 id="embed-code-title" className="text-base font-bold tracking-tight">{TITLES[mode]}</h3>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="flex h-8 w-8 items-center justify-center border border-line hover:border-line-strong"
-          >
+          <IconButton label="Close" size="sm" onClick={onClose}>
             <X size={15} strokeWidth={1.5} />
-          </button>
+          </IconButton>
         </div>
 
         {mode === 'selection' && (
@@ -127,9 +111,9 @@ export function EmbedCodeDialog({ mode, template, onClose, photo, albumSlug, alb
               </div>
             )}
             {showCount && (
-              <label className="block">
-                <span className="label mb-2 block">Frames</span>
-                <input
+              <div className="w-24">
+                <TextField
+                  label="Frames"
                   type="number"
                   min={1}
                   max={24}
@@ -138,22 +122,16 @@ export function EmbedCodeDialog({ mode, template, onClose, photo, albumSlug, alb
                     const next = Number(event.target.value);
                     setCount(Number.isFinite(next) ? Math.max(1, Math.min(24, Math.round(next))) : galleryTemplate.albumCount);
                   }}
-                  className="h-9 w-24 border border-line bg-transparent px-2 text-xs outline-none focus:border-line-strong"
                 />
-              </label>
+              </div>
             )}
           </div>
         )}
 
-        <textarea
-          readOnly
-          value={snippet}
-          rows={5}
-          className="w-full resize-none border border-line bg-faint p-3 font-mono text-xs outline-none"
-        />
+        <TextArea readOnly value={snippet} rows={5} className="bg-faint font-mono" />
 
         <div className="flex flex-wrap gap-2">
-          <Button variant="solid" onClick={copy} disabled={!snippet}>
+          <Button variant="solid" onClick={() => void copy(snippet)} disabled={!snippet}>
             <Copy size={14} strokeWidth={1.5} />
             {copied ? 'Copied' : 'Copy iframe'}
           </Button>
@@ -169,6 +147,6 @@ export function EmbedCodeDialog({ mode, template, onClose, photo, albumSlug, alb
           )}
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
