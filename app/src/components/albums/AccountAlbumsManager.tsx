@@ -13,6 +13,7 @@ import {
   type SetStateAction,
 } from 'react';
 import { useAuth0 } from '@auth0/auth0-react';
+import { AnimatePresence, motion, useReducedMotion, type Variants } from 'framer-motion';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Check,
@@ -82,6 +83,69 @@ import { PhotoLightbox } from '../lightbox/PhotoLightbox';
 import { Button } from '../ui/Button';
 
 const PhotoMetadataGrid = lazy(() => import('../gallery/metadata/PhotoMetadataGrid').then((module) => ({ default: module.PhotoMetadataGrid })));
+const ALBUM_MODE_EASE = [0.22, 1, 0.36, 1] as const;
+
+function albumModeVariants(direction: 1 | -1): Variants {
+  return {
+    enter: {
+      opacity: 0,
+      x: direction * 18,
+    },
+    center: {
+      opacity: 1,
+      x: 0,
+      transition: { duration: 0.24, ease: ALBUM_MODE_EASE },
+    },
+    exit: {
+      opacity: 0,
+      x: direction * -14,
+      transition: { duration: 0.18, ease: ALBUM_MODE_EASE },
+    },
+  };
+}
+
+const staggerContainerVariants: Variants = {
+  enter: {},
+  center: {
+    transition: {
+      staggerChildren: 0.06,
+      delayChildren: 0.02,
+    },
+  },
+  exit: {
+    transition: {
+      staggerChildren: 0.03,
+      staggerDirection: -1,
+    },
+  },
+};
+
+const staggerItemVariants: Variants = {
+  enter: { opacity: 0, y: 10 },
+  center: {
+    opacity: 1,
+    y: 0,
+    transition: { duration: 0.22, ease: ALBUM_MODE_EASE },
+  },
+  exit: {
+    opacity: 0,
+    y: -6,
+    transition: { duration: 0.14, ease: ALBUM_MODE_EASE },
+  },
+};
+
+function useAlbumModeDirection(mode: AlbumDefaultMode): 1 | -1 {
+  const previous = useRef(mode);
+  const [direction, setDirection] = useState<1 | -1>(mode === 'edit' ? 1 : -1);
+
+  useEffect(() => {
+    if (previous.current === mode) return;
+    setDirection(mode === 'edit' ? 1 : -1);
+    previous.current = mode;
+  }, [mode]);
+
+  return direction;
+}
 
 interface Props {
   mode: 'page' | 'settings';
@@ -558,6 +622,7 @@ export function AccountAlbumsManager({ mode, routeAlbumSlug }: Props) {
           <AlbumViewer
             albums={albums}
             photos={photos}
+            availablePhotos={availablePhotos}
             selectedAlbum={selectedAlbum}
             isNewRoute={isNewRoute}
             detailMode={detailMode}
@@ -566,8 +631,14 @@ export function AccountAlbumsManager({ mode, routeAlbumSlug }: Props) {
             selectedPhotoIds={selectedPhotoIds}
             selectionAnchorId={selectionAnchorId}
             selectedGalleryApprovedCount={selectedApprovedPhotoIds.length}
+            albumDraft={albumDraft}
+            photoDrafts={photoDrafts}
+            catalog={{ cameras, lenses }}
             accessToken={accessToken}
+            fileInputRef={fileInputRef}
+            loading={loading}
             busy={busy}
+            progress={progress}
             embedReady={embedReady}
             error={error}
             manager={manager}
@@ -578,7 +649,11 @@ export function AccountAlbumsManager({ mode, routeAlbumSlug }: Props) {
             setPageSurface={setPageSurface}
             setSelectedPhotoIds={setSelectedPhotoIds}
             setSelectionAnchorId={setSelectionAnchorId}
+            setAlbumDraft={setAlbumDraft}
+            setDrafts={setPhotoDrafts}
             setViewPhotoId={setViewPhotoId}
+            uploadFiles={uploadFiles}
+            saveAlbum={saveAlbum}
             submitSelectedToGallery={submitSelectedToGallery}
             withdrawSelectedFromGallery={withdrawSelectedFromGallery}
             patchAlbum={patchAlbum}
@@ -700,9 +775,6 @@ function AlbumBuilder({
   withdrawSelectedFromGallery: () => Promise<void>;
   reload: () => Promise<{ photos: AdminGalleryPhoto[]; albums: GalleryAlbum[] } | null>;
 }) {
-  const [existingPhotoId, setExistingPhotoId] = useState('');
-  const isNew = !selectedAlbumSlug;
-  const empty = albumPhotos.length === 0;
   const rootClass = bounded ? 'flex h-full min-h-0 flex-col gap-4' : 'space-y-4';
   const gridClass = bounded
     ? 'grid min-h-0 flex-1 gap-4 xl:grid-cols-[14rem_minmax(0,1fr)_18rem] xl:items-start xl:overflow-hidden'
@@ -719,6 +791,130 @@ function AlbumBuilder({
   const optionsClass = bounded
     ? 'space-y-4 xl:h-full xl:overflow-y-auto xl:pr-1 xl:[scrollbar-gutter:stable]'
     : 'space-y-4';
+
+  return (
+    <div className={rootClass}>
+      {error && <ErrorBanner message={error} />}
+      {progress && <UploadProgress progress={progress} />}
+
+      <div className={gridClass}>
+        <aside className={albumNavClass}>
+          <Button variant="solid" className="w-full" onClick={startNewAlbum}>
+            <Plus size={14} strokeWidth={1.5} />
+            New album
+          </Button>
+          <div className={albumListClass}>
+            {albums.map((album) => (
+              <button
+                key={album.slug}
+                type="button"
+                onClick={() => selectAlbum(album)}
+                className={[
+                  'block w-full px-3 py-3 text-left transition-colors',
+                  selectedAlbumSlug === album.slug ? 'bg-fg text-bg' : 'hover:bg-faint',
+                ].join(' ')}
+              >
+                <div className="truncate text-xs font-bold">{album.title}</div>
+                <div className="mt-1 text-[10px] uppercase tracking-wide opacity-70">
+                  {album.photos.length} photos · {albumVisibilityLabel(album.status)}
+                </div>
+              </button>
+            ))}
+            {albums.length === 0 && (
+              <div className="px-3 py-6 text-center text-xs text-muted">
+                Albums you create appear here.
+              </div>
+            )}
+          </div>
+        </aside>
+
+        <AlbumEditWorkspace
+          availablePhotos={availablePhotos}
+          albumPhotos={albumPhotos}
+          photos={photos}
+          selectedAlbumSlug={selectedAlbumSlug}
+          selectedPhotoIds={selectedPhotoIds}
+          albumDraft={albumDraft}
+          photoDrafts={photoDrafts}
+          catalog={catalog}
+          accessToken={accessToken}
+          fileInputRef={fileInputRef}
+          loading={loading}
+          busy={busy}
+          setAlbumDraft={setAlbumDraft}
+          setDrafts={setDrafts}
+          setSelectedPhotoIds={setSelectedPhotoIds}
+          setSelectionAnchorId={setSelectionAnchorId}
+          uploadFiles={uploadFiles}
+          saveAlbum={saveAlbum}
+          submitSelectedToGallery={submitSelectedToGallery}
+          withdrawSelectedFromGallery={withdrawSelectedFromGallery}
+          reload={reload}
+          editorClass={editorClass}
+          optionsClass={optionsClass}
+        />
+      </div>
+    </div>
+  );
+}
+
+function AlbumEditWorkspace({
+  availablePhotos,
+  albumPhotos,
+  photos,
+  selectedAlbumSlug,
+  selectedPhotoIds,
+  albumDraft,
+  photoDrafts,
+  catalog,
+  accessToken,
+  fileInputRef,
+  loading,
+  busy,
+  setAlbumDraft,
+  setDrafts,
+  setSelectedPhotoIds,
+  setSelectionAnchorId,
+  uploadFiles,
+  saveAlbum,
+  submitSelectedToGallery,
+  withdrawSelectedFromGallery,
+  reload,
+  editorClass,
+  optionsClass,
+  animated = false,
+}: {
+  availablePhotos: AdminGalleryPhoto[];
+  albumPhotos: AlbumPhotoView[];
+  photos: AdminGalleryPhoto[];
+  selectedAlbumSlug: string;
+  selectedPhotoIds: Set<string>;
+  albumDraft: AlbumDraft;
+  photoDrafts: Record<string, PhotoDraft>;
+  catalog: PhotoMetadataCatalog;
+  accessToken: string | null;
+  fileInputRef: RefObject<HTMLInputElement>;
+  loading: boolean;
+  busy: boolean;
+  setAlbumDraft: Dispatch<SetStateAction<AlbumDraft>>;
+  setDrafts: Dispatch<SetStateAction<Record<string, PhotoDraft>>>;
+  setSelectedPhotoIds: Dispatch<SetStateAction<Set<string>>>;
+  setSelectionAnchorId: Dispatch<SetStateAction<string | null>>;
+  uploadFiles: (files: FileList | File[] | null) => Promise<void>;
+  saveAlbum: () => Promise<void>;
+  submitSelectedToGallery: () => Promise<void>;
+  withdrawSelectedFromGallery: () => Promise<void>;
+  reload: () => Promise<{ photos: AdminGalleryPhoto[]; albums: GalleryAlbum[] } | null>;
+  editorClass: string;
+  optionsClass: string;
+  animated?: boolean;
+}) {
+  const [existingPhotoId, setExistingPhotoId] = useState('');
+  const reducedMotion = useReducedMotion();
+  const isNew = !selectedAlbumSlug;
+  const empty = albumPhotos.length === 0;
+  const shouldAnimate = animated && !reducedMotion;
+  const itemMotion = shouldAnimate ? { variants: staggerItemVariants } : {};
   const previewUrls = useAccountPhotoPreviewUrls(albumPhotos, accessToken);
   const metadataRows = useMemo(
     () => albumPhotos.map((photo) => ({
@@ -785,10 +981,7 @@ function AlbumBuilder({
   }, [albumPhotos, fileInputRef, saveAlbum, setSelectedPhotoIds]);
 
   return (
-    <div className={rootClass}>
-      {error && <ErrorBanner message={error} />}
-      {progress && <UploadProgress progress={progress} />}
-
+    <>
       <input
         ref={fileInputRef}
         type="file"
@@ -798,255 +991,238 @@ function AlbumBuilder({
         onChange={(event) => void uploadFiles(event.target.files)}
       />
 
-      <div className={gridClass}>
-        <aside className={albumNavClass}>
-          <Button variant="solid" className="w-full" onClick={startNewAlbum}>
-            <Plus size={14} strokeWidth={1.5} />
-            New album
-          </Button>
-          <div className={albumListClass}>
-            {albums.map((album) => (
-              <button
-                key={album.slug}
-                type="button"
-                onClick={() => selectAlbum(album)}
-                className={[
-                  'block w-full px-3 py-3 text-left transition-colors',
-                  selectedAlbumSlug === album.slug ? 'bg-fg text-bg' : 'hover:bg-faint',
-                ].join(' ')}
-              >
-                <div className="truncate text-xs font-bold">{album.title}</div>
-                <div className="mt-1 text-[10px] uppercase tracking-wide opacity-70">
-                  {album.photos.length} photos · {albumVisibilityLabel(album.status)}
-                </div>
-              </button>
-            ))}
-            {albums.length === 0 && (
-              <div className="px-3 py-6 text-center text-xs text-muted">
-                Albums you create appear here.
-              </div>
-            )}
-          </div>
-        </aside>
+      <motion.main
+        className={editorClass}
+        variants={shouldAnimate ? staggerContainerVariants : undefined}
+        initial={shouldAnimate ? 'enter' : false}
+        animate={shouldAnimate ? 'center' : undefined}
+        exit={shouldAnimate ? 'exit' : undefined}
+      >
+        <motion.section className="space-y-4" {...itemMotion}>
+          <input
+            value={albumDraft.title}
+            onChange={(event) => setAlbumDraft((current) => ({ ...current, title: event.target.value }))}
+            placeholder="Add a title"
+            className="w-full border-0 border-b border-line bg-transparent px-0 py-2 text-4xl font-bold tracking-tight text-fg outline-none placeholder:text-muted focus:border-line-strong"
+          />
+          <textarea
+            value={albumDraft.description}
+            onChange={(event) => setAlbumDraft((current) => ({ ...current, description: event.target.value }))}
+            rows={2}
+            placeholder="Add a description"
+            className="w-full resize-none border-0 border-b border-line bg-transparent px-0 py-2 text-sm outline-none placeholder:text-muted focus:border-line-strong"
+          />
+        </motion.section>
 
-        <main className={editorClass}>
-          <section className="space-y-4">
-            <input
-              value={albumDraft.title}
-              onChange={(event) => setAlbumDraft((current) => ({ ...current, title: event.target.value }))}
-              placeholder="Add a title"
-              className="w-full border-0 border-b border-line bg-transparent px-0 py-2 text-4xl font-bold tracking-tight text-fg outline-none placeholder:text-muted focus:border-line-strong"
-            />
-            <textarea
-              value={albumDraft.description}
-              onChange={(event) => setAlbumDraft((current) => ({ ...current, description: event.target.value }))}
-              rows={2}
-              placeholder="Add a description"
-              className="w-full resize-none border-0 border-b border-line bg-transparent px-0 py-2 text-sm outline-none placeholder:text-muted focus:border-line-strong"
-            />
-          </section>
-
+        <motion.div {...itemMotion}>
           <AlbumDropZone
             empty={empty}
             busy={busy}
             onChoose={() => fileInputRef.current?.click()}
             onFiles={(files) => void uploadFiles(files)}
           />
+        </motion.div>
 
-          {albumPhotos.length > 0 && (
-            <section className="space-y-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <div className="text-sm font-bold">Album photos</div>
-                  <div className="label mt-1">{albumPhotos.length} selected for this album</div>
-                </div>
-                <Button onClick={() => fileInputRef.current?.click()} disabled={busy}>
-                  <Upload size={14} strokeWidth={1.5} />
-                  Choose images
-                </Button>
+        {albumPhotos.length > 0 && (
+          <motion.section className="space-y-3" {...itemMotion}>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <div className="text-sm font-bold">Album photos</div>
+                <div className="label mt-1">{albumPhotos.length} selected for this album</div>
               </div>
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
-                {albumPhotos.map((photo) => (
-                  <div key={photo.id} className="group relative border border-line">
-                    <AccountPhotoImage photo={photo} accessToken={accessToken} className="aspect-square w-full object-cover grayscale" />
-                    <button
-                      type="button"
-                      onClick={() => setAlbumDraft((current) => ({
-                        ...current,
-                        photos: current.photos.filter((item) => item.photoId !== photo.id),
-                        coverPhotoId: current.coverPhotoId === photo.id ? '' : current.coverPhotoId,
-                      }))}
-                      className="absolute right-1 top-1 flex h-7 w-7 items-center justify-center border border-line bg-surface/90 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100"
-                      aria-label={`Remove ${photo.title}`}
-                    >
-                      <X size={13} strokeWidth={1.5} />
-                    </button>
-                    {albumDraft.coverPhotoId === photo.id && (
-                      <div className="absolute bottom-1 left-1 border border-line bg-surface/90 px-1.5 py-1 text-[10px] uppercase tracking-wide">
-                        Cover
-                      </div>
-                    )}
-                    {photo.visibility === 'hidden' && (
-                      <div className="absolute bottom-1 right-1 border border-line bg-surface/90 px-1.5 py-1 text-[10px] uppercase tracking-wide">
-                        Hidden
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
-
-          <section className="space-y-3">
-            <div>
-              <div className="text-sm font-bold">Photo details</div>
-              <div className="label mt-1">
-                Edit metadata in bulk before saving the album or submitting photos to the public gallery.
-              </div>
+              <Button onClick={() => fileInputRef.current?.click()} disabled={busy}>
+                <Upload size={14} strokeWidth={1.5} />
+                Choose images
+              </Button>
             </div>
-            <Suspense fallback={<div className="border border-line bg-faint px-3 py-8 text-center text-xs text-muted">Loading metadata grid…</div>}>
-              <PhotoMetadataGrid
-                rows={metadataRows}
-                context="album"
-                catalog={catalog}
-                onRowsChange={setMetadataRows}
-                selectedRowIds={selectedPhotoIds}
-                onSelectedRowIdsChange={(ids) => {
-                  setSelectedPhotoIds(ids);
-                  setSelectionAnchorId(ids.values().next().value ?? null);
-                }}
-                readonlyColumns={['galleryStatus']}
-              />
-            </Suspense>
-          </section>
-        </main>
-
-        <aside className={optionsClass}>
-          <section className="border border-line p-3">
-            <div className="label mb-3">Album options</div>
-            <div>
-              <span className="label mb-2 block">Visibility</span>
-              <div className="grid grid-cols-2 gap-2">
-                <VisibilityChoiceButton
-                  active={albumDraft.status === 'draft'}
-                  icon={<Lock size={13} strokeWidth={1.6} />}
-                  label="Private"
-                  onClick={() => setAlbumDraft((current) => ({ ...current, status: 'draft' }))}
-                />
-                <VisibilityChoiceButton
-                  active={albumDraft.status === 'published'}
-                  icon={<Globe size={13} strokeWidth={1.6} />}
-                  label="Public"
-                  onClick={() => setAlbumDraft((current) => ({ ...current, status: 'published' }))}
-                />
-              </div>
-            </div>
-            <TextField
-              label="Slug"
-              value={albumDraft.slug}
-              onChange={(value) => setAlbumDraft((current) => ({ ...current, slug: value }))}
-              placeholder="Generated from title"
-              className="mt-3"
-            />
-            <label className="mt-3 block">
-              <span className="label mb-2 block">Album password</span>
-              <input
-                type="password"
-                value={albumDraft.albumPassword}
-                placeholder={albumDraft.hasPassword ? 'Current password stays until replaced' : 'Optional'}
-                onChange={(event) => setAlbumDraft((current) => ({
-                  ...current,
-                  albumPassword: event.target.value,
-                  hasPassword: event.target.value.trim() ? true : current.hasPassword,
-                }))}
-                className="h-9 w-full border border-line bg-transparent px-2 text-xs outline-none focus:border-line-strong"
-              />
-              <div className="mt-2 flex items-center justify-between gap-2 text-[11px] uppercase tracking-[0.16em] text-muted">
-                <span>{albumDraft.hasPassword ? 'Password protection enabled' : 'No password set'}</span>
-                {albumDraft.hasPassword && (
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+              {albumPhotos.map((photo) => (
+                <div key={photo.id} className="group relative border border-line">
+                  <AccountPhotoImage photo={photo} accessToken={accessToken} className="aspect-square w-full object-cover grayscale" />
                   <button
                     type="button"
-                    onClick={() => setAlbumDraft((current) => ({ ...current, hasPassword: false, albumPassword: '' }))}
-                    className="border border-line px-2 py-1 transition-colors hover:border-line-strong"
+                    onClick={() => setAlbumDraft((current) => ({
+                      ...current,
+                      photos: current.photos.filter((item) => item.photoId !== photo.id),
+                      coverPhotoId: current.coverPhotoId === photo.id ? '' : current.coverPhotoId,
+                    }))}
+                    className="absolute right-1 top-1 flex h-7 w-7 items-center justify-center border border-line bg-surface/90 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100"
+                    aria-label={`Remove ${photo.title}`}
                   >
-                    Remove
+                    <X size={13} strokeWidth={1.5} />
                   </button>
-                )}
-              </div>
-            </label>
-            {selectedAlbumSlug && albumDraft.status === 'published' && (
-              <div className="mt-3 border border-line bg-faint px-3 py-2 text-[11px] uppercase tracking-[0.16em] text-muted">
-                Public link: /g/{albumDraft.slug || selectedAlbumSlug}
-              </div>
-            )}
-            <label className="mt-3 block">
-              <span className="label mb-2 block">Cover</span>
-              <select
-                value={albumDraft.coverPhotoId}
-                onChange={(event) => setAlbumDraft((current) => ({ ...current, coverPhotoId: event.target.value }))}
-                className="h-9 w-full border border-line bg-transparent px-2 text-xs outline-none focus:border-line-strong"
-              >
-                <option value="">Auto</option>
-                {albumPhotos.map((photo) => (
-                  <option key={photo.id} value={photo.id}>{photo.title}</option>
-                ))}
-              </select>
-            </label>
-            {availablePhotos.length > 0 && (
-              <label className="mt-3 block">
-                <span className="label mb-2 block">Add existing photo</span>
-                <div className="flex gap-2">
-                  <select
-                    value={existingPhotoId}
-                    onChange={(event) => setExistingPhotoId(event.target.value)}
-                    className="h-9 min-w-0 flex-1 border border-line bg-transparent px-2 text-xs outline-none focus:border-line-strong"
-                  >
-                    <option value="">Choose</option>
-                    {availablePhotos.map((photo) => (
-                      <option key={photo.id} value={photo.id}>{photo.title}</option>
-                    ))}
-                  </select>
-                  <Button onClick={addExistingPhoto} disabled={!existingPhotoId}>Add</Button>
+                  {albumDraft.coverPhotoId === photo.id && (
+                    <div className="absolute bottom-1 left-1 border border-line bg-surface/90 px-1.5 py-1 text-[10px] uppercase tracking-wide">
+                      Cover
+                    </div>
+                  )}
+                  {photo.visibility === 'hidden' && (
+                    <div className="absolute bottom-1 right-1 border border-line bg-surface/90 px-1.5 py-1 text-[10px] uppercase tracking-wide">
+                      Hidden
+                    </div>
+                  )}
                 </div>
-              </label>
-            )}
-          </section>
-
-          <section className="border border-line p-3">
-            <div className="label mb-3">Actions</div>
-            <div className="space-y-2">
-              <Button variant="solid" className="w-full" onClick={() => void saveAlbum()} disabled={busy || !albumDraft.title.trim()}>
-                <Save size={14} strokeWidth={1.5} />
-                {isNew ? 'Create album' : 'Save'}
-              </Button>
-              <Button className="w-full" onClick={() => void reload()} disabled={loading || busy}>
-                <RefreshCw size={14} strokeWidth={1.5} />
-                Reload
-              </Button>
-              <Button className="w-full" onClick={() => void submitSelectedToGallery()} disabled={busy || selectedPhotoIds.size === 0}>
-                <Send size={14} strokeWidth={1.5} />
-                Submit selected to gallery
-              </Button>
-              <Button className="w-full" onClick={() => void withdrawSelectedFromGallery()} disabled={busy || selectedPendingGalleryCount === 0}>
-                <Lock size={14} strokeWidth={1.5} />
-                Withdraw pending
-              </Button>
+              ))}
             </div>
-            <dl className="mt-4 divide-y divide-line border border-line text-xs">
-              <SummaryRow label="Album photos" value={String(albumPhotos.length)} />
-              <SummaryRow label="Library photos" value={String(photos.length)} />
-              <SummaryRow label="Selected" value={String(selectedPhotoIds.size)} />
-            </dl>
-          </section>
-        </aside>
-      </div>
-    </div>
+          </motion.section>
+        )}
+
+        <motion.section className="space-y-3" {...itemMotion}>
+          <div>
+            <div className="text-sm font-bold">Photo details</div>
+            <div className="label mt-1">
+              Edit metadata in bulk before saving the album or submitting photos to the public gallery.
+            </div>
+          </div>
+          <Suspense fallback={<div className="border border-line bg-faint px-3 py-8 text-center text-xs text-muted">Loading metadata grid...</div>}>
+            <PhotoMetadataGrid
+              rows={metadataRows}
+              context="album"
+              catalog={catalog}
+              onRowsChange={setMetadataRows}
+              selectedRowIds={selectedPhotoIds}
+              onSelectedRowIdsChange={(ids) => {
+                setSelectedPhotoIds(ids);
+                setSelectionAnchorId(ids.values().next().value ?? null);
+              }}
+              readonlyColumns={['galleryStatus']}
+            />
+          </Suspense>
+        </motion.section>
+      </motion.main>
+
+      <motion.aside
+        className={optionsClass}
+        variants={shouldAnimate ? staggerContainerVariants : undefined}
+        initial={shouldAnimate ? 'enter' : false}
+        animate={shouldAnimate ? 'center' : undefined}
+        exit={shouldAnimate ? 'exit' : undefined}
+      >
+        <motion.section className="border border-line p-3" {...itemMotion}>
+          <div className="label mb-3">Album options</div>
+          <div>
+            <span className="label mb-2 block">Visibility</span>
+            <div className="grid grid-cols-2 gap-2">
+              <VisibilityChoiceButton
+                active={albumDraft.status === 'draft'}
+                icon={<Lock size={13} strokeWidth={1.6} />}
+                label="Private"
+                onClick={() => setAlbumDraft((current) => ({ ...current, status: 'draft' }))}
+              />
+              <VisibilityChoiceButton
+                active={albumDraft.status === 'published'}
+                icon={<Globe size={13} strokeWidth={1.6} />}
+                label="Public"
+                onClick={() => setAlbumDraft((current) => ({ ...current, status: 'published' }))}
+              />
+            </div>
+          </div>
+          <TextField
+            label="Slug"
+            value={albumDraft.slug}
+            onChange={(value) => setAlbumDraft((current) => ({ ...current, slug: value }))}
+            placeholder="Generated from title"
+            className="mt-3"
+          />
+          <label className="mt-3 block">
+            <span className="label mb-2 block">Album password</span>
+            <input
+              type="password"
+              value={albumDraft.albumPassword}
+              placeholder={albumDraft.hasPassword ? 'Current password stays until replaced' : 'Optional'}
+              onChange={(event) => setAlbumDraft((current) => ({
+                ...current,
+                albumPassword: event.target.value,
+                hasPassword: event.target.value.trim() ? true : current.hasPassword,
+              }))}
+              className="h-9 w-full border border-line bg-transparent px-2 text-xs outline-none focus:border-line-strong"
+            />
+            <div className="mt-2 flex items-center justify-between gap-2 text-[11px] uppercase tracking-[0.16em] text-muted">
+              <span>{albumDraft.hasPassword ? 'Password protection enabled' : 'No password set'}</span>
+              {albumDraft.hasPassword && (
+                <button
+                  type="button"
+                  onClick={() => setAlbumDraft((current) => ({ ...current, hasPassword: false, albumPassword: '' }))}
+                  className="border border-line px-2 py-1 transition-colors hover:border-line-strong"
+                >
+                  Remove
+                </button>
+              )}
+            </div>
+          </label>
+          {selectedAlbumSlug && albumDraft.status === 'published' && (
+            <div className="mt-3 border border-line bg-faint px-3 py-2 text-[11px] uppercase tracking-[0.16em] text-muted">
+              Public link: /g/{albumDraft.slug || selectedAlbumSlug}
+            </div>
+          )}
+          <label className="mt-3 block">
+            <span className="label mb-2 block">Cover</span>
+            <select
+              value={albumDraft.coverPhotoId}
+              onChange={(event) => setAlbumDraft((current) => ({ ...current, coverPhotoId: event.target.value }))}
+              className="h-9 w-full border border-line bg-transparent px-2 text-xs outline-none focus:border-line-strong"
+            >
+              <option value="">Auto</option>
+              {albumPhotos.map((photo) => (
+                <option key={photo.id} value={photo.id}>{photo.title}</option>
+              ))}
+            </select>
+          </label>
+          {availablePhotos.length > 0 && (
+            <label className="mt-3 block">
+              <span className="label mb-2 block">Add existing photo</span>
+              <div className="flex gap-2">
+                <select
+                  value={existingPhotoId}
+                  onChange={(event) => setExistingPhotoId(event.target.value)}
+                  className="h-9 min-w-0 flex-1 border border-line bg-transparent px-2 text-xs outline-none focus:border-line-strong"
+                >
+                  <option value="">Choose</option>
+                  {availablePhotos.map((photo) => (
+                    <option key={photo.id} value={photo.id}>{photo.title}</option>
+                  ))}
+                </select>
+                <Button onClick={addExistingPhoto} disabled={!existingPhotoId}>Add</Button>
+              </div>
+            </label>
+          )}
+        </motion.section>
+
+        <motion.section className="border border-line p-3" {...itemMotion}>
+          <div className="label mb-3">Actions</div>
+          <div className="space-y-2">
+            <Button variant="solid" className="w-full" onClick={() => void saveAlbum()} disabled={busy || !albumDraft.title.trim()}>
+              <Save size={14} strokeWidth={1.5} />
+              {isNew ? 'Create album' : 'Save'}
+            </Button>
+            <Button className="w-full" onClick={() => void reload()} disabled={loading || busy}>
+              <RefreshCw size={14} strokeWidth={1.5} />
+              Reload
+            </Button>
+            <Button className="w-full" onClick={() => void submitSelectedToGallery()} disabled={busy || selectedPhotoIds.size === 0}>
+              <Send size={14} strokeWidth={1.5} />
+              Submit selected to gallery
+            </Button>
+            <Button className="w-full" onClick={() => void withdrawSelectedFromGallery()} disabled={busy || selectedPendingGalleryCount === 0}>
+              <Lock size={14} strokeWidth={1.5} />
+              Withdraw pending
+            </Button>
+          </div>
+          <dl className="mt-4 divide-y divide-line border border-line text-xs">
+            <SummaryRow label="Album photos" value={String(albumPhotos.length)} />
+            <SummaryRow label="Library photos" value={String(photos.length)} />
+            <SummaryRow label="Selected" value={String(selectedPhotoIds.size)} />
+          </dl>
+        </motion.section>
+      </motion.aside>
+    </>
   );
 }
 
 function AlbumViewer({
   albums,
   photos,
+  availablePhotos,
   selectedAlbum,
   isNewRoute,
   detailMode,
@@ -1055,8 +1231,14 @@ function AlbumViewer({
   selectedPhotoIds,
   selectionAnchorId,
   selectedGalleryApprovedCount,
+  albumDraft,
+  photoDrafts,
+  catalog,
   accessToken,
+  fileInputRef,
+  loading,
   busy,
+  progress,
   embedReady,
   error,
   manager,
@@ -1067,7 +1249,11 @@ function AlbumViewer({
   setPageSurface,
   setSelectedPhotoIds,
   setSelectionAnchorId,
+  setAlbumDraft,
+  setDrafts,
   setViewPhotoId,
+  uploadFiles,
+  saveAlbum,
   submitSelectedToGallery,
   withdrawSelectedFromGallery,
   patchAlbum,
@@ -1078,6 +1264,7 @@ function AlbumViewer({
 }: {
   albums: GalleryAlbum[];
   photos: AdminGalleryPhoto[];
+  availablePhotos: AdminGalleryPhoto[];
   selectedAlbum: GalleryAlbum | null;
   isNewRoute: boolean;
   detailMode: AlbumDefaultMode;
@@ -1086,8 +1273,14 @@ function AlbumViewer({
   selectedPhotoIds: Set<string>;
   selectionAnchorId: string | null;
   selectedGalleryApprovedCount: number;
+  albumDraft: AlbumDraft;
+  photoDrafts: Record<string, PhotoDraft>;
+  catalog: PhotoMetadataCatalog;
   accessToken: string | null;
+  fileInputRef: RefObject<HTMLInputElement>;
+  loading: boolean;
   busy: boolean;
+  progress: ImageProcessingProgress | null;
   embedReady: boolean;
   error: string | null;
   manager: ReactNode;
@@ -1098,7 +1291,11 @@ function AlbumViewer({
   setPageSurface: Dispatch<SetStateAction<'albums' | 'all'>>;
   setSelectedPhotoIds: Dispatch<SetStateAction<Set<string>>>;
   setSelectionAnchorId: Dispatch<SetStateAction<string | null>>;
+  setAlbumDraft: Dispatch<SetStateAction<AlbumDraft>>;
+  setDrafts: Dispatch<SetStateAction<Record<string, PhotoDraft>>>;
   setViewPhotoId: Dispatch<SetStateAction<string | null>>;
+  uploadFiles: (files: FileList | File[] | null) => Promise<void>;
+  saveAlbum: () => Promise<void>;
   submitSelectedToGallery: () => Promise<void>;
   withdrawSelectedFromGallery: () => Promise<void>;
   patchAlbum: (slug: string, updates: AlbumMutation) => Promise<GalleryAlbum>;
@@ -1167,6 +1364,21 @@ function AlbumViewer({
     setSelectedPhotoIds(new Set());
     setSelectionAnchorId(null);
   };
+  const modeDirection = useAlbumModeDirection(detailMode);
+  const reducedMotion = useReducedMotion();
+  const modeMotionProps = reducedMotion
+    ? {
+        initial: false,
+        animate: { opacity: 1, x: 0 },
+        exit: { opacity: 0 },
+        transition: { duration: 0.01 },
+      }
+    : {
+        variants: albumModeVariants(modeDirection),
+        initial: 'enter',
+        animate: 'center',
+        exit: 'exit',
+      };
 
   if (albums.length === 0 && photos.length === 0) {
     return (
@@ -1185,7 +1397,7 @@ function AlbumViewer({
     );
   }
 
-  if (isNewRoute || (selectedAlbum && detailMode === 'edit')) {
+  if (isNewRoute) {
     return manager;
   }
 
@@ -1193,6 +1405,7 @@ function AlbumViewer({
     return (
       <div className="space-y-5">
         {error && <ErrorBanner message={error} />}
+        {progress && <UploadProgress progress={progress} />}
         <div className="space-y-4 border-b border-line pb-4">
           <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-muted">
             <button
@@ -1246,46 +1459,84 @@ function AlbumViewer({
           </div>
 
           {selectedAlbum.description && <p className="max-w-3xl text-sm text-muted">{selectedAlbum.description}</p>}
-
-          <AlbumActionBar
-            surface={pageSurface}
-            selectedCount={selectedPhotoIds.size}
-            selectedEmbeddableCount={selectedEmbeddableCount}
-            selectedSecondaryCount={selectedVisibleAlbumCount}
-            visibleCount={selectedAlbumPhotos.length}
-            busy={busy}
-            embedReady={embedReady}
-            allVisibleSelected={allVisibleSelected}
-            hasSelectablePhotos={visiblePhotoIds.length > 0}
-            onSurface={(surface) => {
-              setPageSurface(surface);
-              if (surface === 'all') selectAlbum(null);
-            }}
-            onReload={() => void reload()}
-            onNew={startNewAlbum}
-            primaryActionLabel="Show in public album"
-            secondaryActionLabel="Hide from public album"
-            onPrimaryAction={() => void updateSelectedAlbumPhotoVisibility('visible')}
-            onSecondaryAction={() => void updateSelectedAlbumPhotoVisibility('hidden')}
-            onEmbedSelected={() => onEmbedSelected({
-              photoIds: selectedAlbumScopedPhotos.filter((photo) => photo.visibility === 'visible').map((photo) => photo.id),
-              albumSlug: selectedAlbum.slug,
-              albumTitle: selectedAlbum.title,
-            })}
-            onSelectAll={() => setAllVisible(!allVisibleSelected)}
-            inAlbum
-          />
         </div>
 
-        <PhotoGrid
-          photos={selectedAlbumPhotos}
-          accessToken={accessToken}
-          selectedPhotoIds={selectedPhotoIds}
-          onToggleSelection={(photoId, orderedIds, shiftKey) => togglePhotoSelection(photoId, orderedIds, shiftKey)}
-          setViewPhotoId={setViewPhotoId}
-          showTitles={preferences.showPhotoTitles}
-          color
-        />
+        <AnimatePresence initial={false} mode="wait">
+          {detailMode === 'view' ? (
+            <motion.div key="album-view" {...modeMotionProps} className="space-y-5">
+              <AlbumActionBar
+                surface={pageSurface}
+                selectedCount={selectedPhotoIds.size}
+                selectedEmbeddableCount={selectedEmbeddableCount}
+                selectedSecondaryCount={selectedVisibleAlbumCount}
+                visibleCount={selectedAlbumPhotos.length}
+                busy={busy}
+                embedReady={embedReady}
+                allVisibleSelected={allVisibleSelected}
+                hasSelectablePhotos={visiblePhotoIds.length > 0}
+                onSurface={(surface) => {
+                  setPageSurface(surface);
+                  if (surface === 'all') selectAlbum(null);
+                }}
+                onReload={() => void reload()}
+                onNew={startNewAlbum}
+                primaryActionLabel="Show in public album"
+                secondaryActionLabel="Hide from public album"
+                onPrimaryAction={() => void updateSelectedAlbumPhotoVisibility('visible')}
+                onSecondaryAction={() => void updateSelectedAlbumPhotoVisibility('hidden')}
+                onEmbedSelected={() => onEmbedSelected({
+                  photoIds: selectedAlbumScopedPhotos.filter((photo) => photo.visibility === 'visible').map((photo) => photo.id),
+                  albumSlug: selectedAlbum.slug,
+                  albumTitle: selectedAlbum.title,
+                })}
+                onSelectAll={() => setAllVisible(!allVisibleSelected)}
+                inAlbum
+              />
+              <PhotoGrid
+                photos={selectedAlbumPhotos}
+                accessToken={accessToken}
+                selectedPhotoIds={selectedPhotoIds}
+                onToggleSelection={(photoId, orderedIds, shiftKey) => togglePhotoSelection(photoId, orderedIds, shiftKey)}
+                setViewPhotoId={setViewPhotoId}
+                showTitles={preferences.showPhotoTitles}
+                color
+              />
+            </motion.div>
+          ) : (
+            <motion.div
+              key="album-edit"
+              {...modeMotionProps}
+              className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_18rem] xl:items-start"
+            >
+              <AlbumEditWorkspace
+                availablePhotos={availablePhotos}
+                albumPhotos={selectedAlbumPhotos}
+                photos={photos}
+                selectedAlbumSlug={selectedAlbum.slug}
+                selectedPhotoIds={selectedPhotoIds}
+                albumDraft={albumDraft}
+                photoDrafts={photoDrafts}
+                catalog={catalog}
+                accessToken={accessToken}
+                fileInputRef={fileInputRef}
+                loading={loading}
+                busy={busy}
+                setAlbumDraft={setAlbumDraft}
+                setDrafts={setDrafts}
+                setSelectedPhotoIds={setSelectedPhotoIds}
+                setSelectionAnchorId={setSelectionAnchorId}
+                uploadFiles={uploadFiles}
+                saveAlbum={saveAlbum}
+                submitSelectedToGallery={submitSelectedToGallery}
+                withdrawSelectedFromGallery={withdrawSelectedFromGallery}
+                reload={reload}
+                editorClass="min-w-0 space-y-5"
+                optionsClass="space-y-4"
+                animated
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     );
   }
