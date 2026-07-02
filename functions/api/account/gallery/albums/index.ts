@@ -7,6 +7,7 @@ import {
   normalizePhotoInputs,
   ownerNameForIdentity,
   ownedAlbumWithPhotos,
+  ownedAlbumsWithPhotos,
   replaceAlbumPhotos,
   type GalleryAlbumRow,
 } from '../../../../_lib/embed';
@@ -23,9 +24,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ env, request }) => {
     const rows = await env.GALLERY_DB.prepare('SELECT * FROM gallery_albums WHERE owner_sub = ? ORDER BY updated_at DESC')
       .bind(identity.sub)
       .all<GalleryAlbumRow>();
-    const albums = [];
-    for (const row of rows.results ?? []) albums.push(await ownedAlbumWithPhotos(env, row.slug, identity.sub));
-    return json({ albums: albums.filter(Boolean) });
+    return json({ albums: await ownedAlbumsWithPhotos(env, rows.results ?? [], identity.sub) });
   } catch (error) {
     return adminAuthError(error);
   }

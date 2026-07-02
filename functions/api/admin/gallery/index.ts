@@ -1,9 +1,11 @@
 import {
   cleanId,
+  encodeCursor,
   json,
   legacyStatusFromGalleryStatus,
   legacyStatusToGalleryStatus,
   normalizeTags,
+  pageParamsFromUrl,
   photoFromRow,
   type GalleryEnv,
   type GalleryRow,
@@ -33,13 +35,34 @@ export const onRequestGet: PagesFunction<Env> = async ({ env, request }) => {
   const status = url.searchParams.get('status');
   const includeStatus = status && ['draft', 'pending', 'approved', 'rejected', 'not_submitted'].includes(status);
   const queryStatus = includeStatus ? legacyStatusToGalleryStatus(status) : null;
-  const query = includeStatus
-    ? `SELECT * FROM gallery_photos WHERE gallery_status = ? ORDER BY updated_at DESC`
-    : `SELECT * FROM gallery_photos ORDER BY updated_at DESC`;
-  const statement = env.GALLERY_DB.prepare(query);
-  const rows = includeStatus ? await statement.bind(queryStatus).all<GalleryRow>() : await statement.all<GalleryRow>();
+  const { limit, cursor } = pageParamsFromUrl(url);
 
-  return json({ photos: (rows.results ?? []).map((row) => photoFromRow(row, true)) });
+  const conditions: string[] = [];
+  const binds: (string | number)[] = [];
+  if (includeStatus && queryStatus) {
+    conditions.push('gallery_status = ?');
+    binds.push(queryStatus);
+  }
+  if (cursor && cursor.length === 2) {
+    conditions.push('(updated_at, id) < (?, ?)');
+    binds.push(...cursor);
+  }
+  binds.push(limit + 1);
+
+  const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+  const rows = await env.GALLERY_DB.prepare(
+    `SELECT * FROM gallery_photos ${where} ORDER BY updated_at DESC, id DESC LIMIT ?`,
+  )
+    .bind(...binds)
+    .all<GalleryRow>();
+
+  const results = rows.results ?? [];
+  const hasMore = results.length > limit;
+  const photos = hasMore ? results.slice(0, limit) : results;
+  const last = photos[photos.length - 1];
+  const nextCursor = hasMore && last ? encodeCursor([last.updated_at, last.id]) : null;
+
+  return json({ photos: photos.map((row) => photoFromRow(row, true)), nextCursor });
 };
 
 export const onRequestPost: PagesFunction<Env> = async ({ env, request }) => {

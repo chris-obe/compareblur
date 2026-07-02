@@ -1,6 +1,7 @@
 import { adminAuthError, requireAdmin } from '../../../../_lib/admin';
 import {
   adminAlbumWithPhotos,
+  adminAlbumsWithPhotos,
   albumFromRow,
   cleanAlbumSlug,
   normalizeAlbumStatus,
@@ -25,9 +26,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ env, request }) => {
   }
 
   const rows = await env.GALLERY_DB.prepare('SELECT * FROM gallery_albums ORDER BY updated_at DESC').all<GalleryAlbumRow>();
-  const albums = [];
-  for (const row of rows.results ?? []) albums.push(await adminAlbumWithPhotos(env, row));
-  return json({ albums });
+  return json({ albums: await adminAlbumsWithPhotos(env, rows.results ?? []) });
 };
 
 export const onRequestPost: PagesFunction<Env> = async ({ env, request }) => {

@@ -169,3 +169,43 @@ export function cleanId(value: string) {
     .replace(/^-|-$/g, '')
     .slice(0, 80);
 }
+
+// ---- Keyset pagination -------------------------------------------------
+// List endpoints page on the row's sort-key values (not OFFSET) so pages stay
+// stable while rows are inserted. The cursor is a base64url JSON array of the
+// last row's sort values; clients treat it as opaque.
+
+export const DEFAULT_PAGE_LIMIT = 100;
+export const MAX_PAGE_LIMIT = 200;
+
+export interface PageParams {
+  limit: number;
+  cursor: string[] | null;
+}
+
+export function pageParamsFromUrl(url: URL): PageParams {
+  const rawLimit = Number(url.searchParams.get('limit'));
+  const limit = Number.isFinite(rawLimit) && rawLimit > 0
+    ? Math.min(MAX_PAGE_LIMIT, Math.round(rawLimit))
+    : DEFAULT_PAGE_LIMIT;
+  return { limit, cursor: decodeCursor(url.searchParams.get('cursor')) };
+}
+
+export function encodeCursor(values: (string | number | null)[]): string {
+  const jsonBytes = new TextEncoder().encode(JSON.stringify(values.map((value) => (value == null ? '' : String(value)))));
+  let binary = '';
+  for (const byte of jsonBytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+export function decodeCursor(raw: string | null): string[] | null {
+  if (!raw) return null;
+  try {
+    const binary = atob(raw.replace(/-/g, '+').replace(/_/g, '/'));
+    const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+    const parsed = JSON.parse(new TextDecoder().decode(bytes));
+    return Array.isArray(parsed) ? parsed.map(String) : null;
+  } catch {
+    return null;
+  }
+}

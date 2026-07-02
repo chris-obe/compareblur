@@ -370,6 +370,71 @@ export async function adminAlbumWithPhotos(env: GalleryEnv, row: GalleryAlbumRow
   return albumFromRow(row, photos, { coverPhotoId: row.cover_photo_id ?? photos[0]?.id ?? null, includeOwnerSub: true });
 }
 
+// ---- Batch album loaders (list endpoints) --------------------------------
+// Listing albums one-by-one is an N+1: one photos query per album. These load
+// the photos for a whole album page in chunked IN-list queries and group in
+// code, so query count stays constant as album count grows.
+
+const ALBUM_SLUG_CHUNK = 100;
+
+interface GroupedAlbumPhotoRow extends JoinedAlbumPhotoRow {
+  group_album_slug: string;
+}
+
+async function joinedAlbumPhotosBySlug(
+  env: GalleryEnv,
+  slugs: string[],
+  options: { ownerSub?: string } = {},
+): Promise<Map<string, JoinedAlbumPhotoRow[]>> {
+  const grouped = new Map<string, JoinedAlbumPhotoRow[]>();
+  for (const slug of slugs) grouped.set(slug, []);
+  if (slugs.length === 0) return grouped;
+
+  for (let start = 0; start < slugs.length; start += ALBUM_SLUG_CHUNK) {
+    const chunk = slugs.slice(start, start + ALBUM_SLUG_CHUNK);
+    const placeholders = chunk.map(() => '?').join(', ');
+    const ownerFilter = options.ownerSub ? 'AND gallery_photos.submitted_by = ?' : '';
+    const binds = options.ownerSub ? [...chunk, options.ownerSub] : chunk;
+    const rows = await env.GALLERY_DB.prepare(
+      `SELECT gallery_photos.*,
+              gallery_album_photos.album_slug AS group_album_slug,
+              gallery_album_photos.caption AS album_caption,
+              gallery_album_photos.visibility AS album_visibility,
+              gallery_album_photos.sort_order AS album_sort_order
+       FROM gallery_album_photos
+       JOIN gallery_photos ON gallery_photos.id = gallery_album_photos.photo_id
+       WHERE gallery_album_photos.album_slug IN (${placeholders})
+         ${ownerFilter}
+       ORDER BY gallery_album_photos.sort_order ASC, gallery_album_photos.created_at ASC`,
+    )
+      .bind(...binds)
+      .all<GroupedAlbumPhotoRow>();
+
+    for (const row of rows.results ?? []) {
+      const bucket = grouped.get(row.group_album_slug);
+      if (bucket) bucket.push(row);
+    }
+  }
+
+  return grouped;
+}
+
+export async function adminAlbumsWithPhotos(env: GalleryEnv, rows: GalleryAlbumRow[]) {
+  const photosBySlug = await joinedAlbumPhotosBySlug(env, rows.map((row) => row.slug));
+  return rows.map((row) => {
+    const photos = (photosBySlug.get(row.slug) ?? []).map((photo) => albumPhotoFromJoinedRow(photo, { admin: true }));
+    return albumFromRow(row, photos, { coverPhotoId: row.cover_photo_id ?? photos[0]?.id ?? null, includeOwnerSub: true });
+  });
+}
+
+export async function ownedAlbumsWithPhotos(env: GalleryEnv, rows: GalleryAlbumRow[], ownerSub: string) {
+  const photosBySlug = await joinedAlbumPhotosBySlug(env, rows.map((row) => row.slug), { ownerSub });
+  return rows.map((row) => {
+    const photos = (photosBySlug.get(row.slug) ?? []).map((photo) => albumPhotoFromJoinedRow(photo, { admin: true }));
+    return albumFromRow(row, photos, { coverPhotoId: row.cover_photo_id ?? photos[0]?.id ?? null, includeOwnerSub: true });
+  });
+}
+
 export async function albumContainsVisiblePhoto(env: GalleryEnv, slug: string, photoId: string): Promise<boolean> {
   const row = await env.GALLERY_DB.prepare(
     `SELECT gallery_album_photos.photo_id AS id
@@ -401,24 +466,33 @@ export async function replaceAlbumPhotos(
     .filter((photo) => photo.photoId);
 
   await env.GALLERY_DB.prepare('DELETE FROM gallery_album_photos WHERE album_slug = ?').bind(slug).run();
+  if (normalized.length === 0) return;
 
-  for (let index = 0; index < normalized.length; index += 1) {
-    const photo = normalized[index];
-    const query = options.approvedOnly === false && options.ownerSub
-      ? 'SELECT id FROM gallery_photos WHERE id = ? AND submitted_by = ?'
-      : "SELECT id FROM gallery_photos WHERE id = ? AND gallery_status = 'approved'";
-    const statement = env.GALLERY_DB.prepare(query);
-    const match = options.approvedOnly === false && options.ownerSub
-      ? await statement.bind(photo.photoId, options.ownerSub).first<{ id: string }>()
-      : await statement.bind(photo.photoId).first<{ id: string }>();
-    if (!match) continue;
-    await env.GALLERY_DB.prepare(
-      `INSERT INTO gallery_album_photos (album_slug, photo_id, sort_order, caption, visibility, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    )
-      .bind(slug, photo.photoId, index, photo.caption, photo.visibility, now, now)
-      .run();
+  // Validate membership eligibility in chunked IN-list queries (2 per 100
+  // photos) instead of one SELECT per photo, then insert via D1 batch.
+  const ownerScoped = options.approvedOnly === false && options.ownerSub;
+  const validIds = new Set<string>();
+  const ids = normalized.map((photo) => photo.photoId);
+  for (let start = 0; start < ids.length; start += ALBUM_SLUG_CHUNK) {
+    const chunk = ids.slice(start, start + ALBUM_SLUG_CHUNK);
+    const placeholders = chunk.map(() => '?').join(', ');
+    const query = ownerScoped
+      ? `SELECT id FROM gallery_photos WHERE id IN (${placeholders}) AND submitted_by = ?`
+      : `SELECT id FROM gallery_photos WHERE id IN (${placeholders}) AND gallery_status = 'approved'`;
+    const binds = ownerScoped ? [...chunk, options.ownerSub as string] : chunk;
+    const rows = await env.GALLERY_DB.prepare(query).bind(...binds).all<{ id: string }>();
+    for (const row of rows.results ?? []) validIds.add(row.id);
   }
+
+  const insert = env.GALLERY_DB.prepare(
+    `INSERT INTO gallery_album_photos (album_slug, photo_id, sort_order, caption, visibility, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  );
+  const statements = normalized
+    .map((photo, index) => ({ photo, index }))
+    .filter(({ photo }) => validIds.has(photo.photoId))
+    .map(({ photo, index }) => insert.bind(slug, photo.photoId, index, photo.caption, photo.visibility, now, now));
+  if (statements.length > 0) await env.GALLERY_DB.batch(statements);
 }
 
 export async function ownedAlbumWithPhotos(env: GalleryEnv, slug: string, ownerSub: string) {

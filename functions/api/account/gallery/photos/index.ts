@@ -2,10 +2,12 @@ import { adminAuthError, requireAuth0User } from '../../../../_lib/admin';
 import { galleryFormatIdOrDefault } from '../../../../_lib/formats';
 import {
   cleanId,
+  encodeCursor,
   findPhoto,
   json,
   legacyStatusFromGalleryStatus,
   normalizeTags,
+  pageParamsFromUrl,
   photoFromRow,
   type GalleryEnv,
   type GalleryRow,
@@ -23,14 +25,32 @@ const MAX_GALLERY_UPLOAD_BYTES = 1024 * 1024;
 export const onRequestGet: PagesFunction<Env> = async ({ env, request }) => {
   try {
     const identity = await requireAuth0User(request, env);
+    const { limit, cursor } = pageParamsFromUrl(new URL(request.url));
+
+    const binds: (string | number)[] = [identity.sub];
+    let where = 'submitted_by = ?';
+    if (cursor && cursor.length === 2) {
+      where += ' AND (updated_at, id) < (?, ?)';
+      binds.push(...cursor);
+    }
+    binds.push(limit + 1);
+
     const rows = await env.GALLERY_DB.prepare(
       `SELECT * FROM gallery_photos
-       WHERE submitted_by = ?
-       ORDER BY updated_at DESC`,
+       WHERE ${where}
+       ORDER BY updated_at DESC, id DESC
+       LIMIT ?`,
     )
-      .bind(identity.sub)
+      .bind(...binds)
       .all<GalleryRow>();
-    return json({ photos: (rows.results ?? []).map((row) => photoFromRow(row, true)) });
+
+    const results = rows.results ?? [];
+    const hasMore = results.length > limit;
+    const photos = hasMore ? results.slice(0, limit) : results;
+    const last = photos[photos.length - 1];
+    const nextCursor = hasMore && last ? encodeCursor([last.updated_at, last.id]) : null;
+
+    return json({ photos: photos.map((row) => photoFromRow(row, true)), nextCursor });
   } catch (error) {
     return adminAuthError(error);
   }

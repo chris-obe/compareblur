@@ -144,10 +144,12 @@ export interface GalleryTag {
 
 export interface GalleryListResponse {
   photos: GalleryItem[];
+  nextCursor?: string | null;
 }
 
 export interface AdminGalleryListResponse {
   photos: AdminGalleryPhoto[];
+  nextCursor?: string | null;
 }
 
 export interface GalleryAlbumResponse {
@@ -248,9 +250,46 @@ async function readJson<T>(res: Response): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+// List endpoints are keyset-paginated: each page returns `nextCursor` (opaque)
+// until exhausted. `list*Page` fns expose single pages for incremental UIs; the
+// plain `list*` fns drain every page so existing callers keep full-list behaviour.
+export interface GalleryPage {
+  cursor?: string | null;
+  limit?: number;
+}
+
+const MAX_PAGE_FOLLOWS = 50;
+
+function pageQuery(page: GalleryPage): string {
+  const params = new URLSearchParams();
+  if (page.cursor) params.set('cursor', page.cursor);
+  if (page.limit) params.set('limit', String(page.limit));
+  const suffix = params.toString();
+  return suffix ? `?${suffix}` : '';
+}
+
+async function drainPages<T>(fetchPage: (cursor: string | null) => Promise<{ items: T[]; nextCursor: string | null }>): Promise<T[]> {
+  const all: T[] = [];
+  let cursor: string | null = null;
+  for (let i = 0; i < MAX_PAGE_FOLLOWS; i += 1) {
+    const { items, nextCursor } = await fetchPage(cursor);
+    all.push(...items);
+    if (!nextCursor) break;
+    cursor = nextCursor;
+  }
+  return all;
+}
+
+export async function listGalleryPhotosPage(page: GalleryPage = {}): Promise<GalleryListResponse> {
+  const res = await fetch(`/api/gallery${pageQuery(page)}`, { headers: { accept: 'application/json' } });
+  return readJson<GalleryListResponse>(res);
+}
+
 export async function listGalleryPhotos(): Promise<GalleryItem[]> {
-  const res = await fetch('/api/gallery', { headers: { accept: 'application/json' } });
-  return (await readJson<GalleryListResponse>(res)).photos;
+  return drainPages(async (cursor) => {
+    const response = await listGalleryPhotosPage({ cursor });
+    return { items: response.photos, nextCursor: response.nextCursor ?? null };
+  });
 }
 
 export async function getGalleryAlbum(
@@ -350,9 +389,16 @@ export async function clearMyGalleryReaction(
   return readJson<GalleryReactionUpdateResponse>(res);
 }
 
+export async function listAdminGalleryPhotosPage(page: GalleryPage = {}, accessToken?: string): Promise<AdminGalleryListResponse> {
+  const res = await fetch(`/api/admin/gallery${pageQuery(page)}`, { headers: adminHeaders(accessToken) });
+  return readJson<AdminGalleryListResponse>(res);
+}
+
 export async function listAdminGalleryPhotos(accessToken?: string): Promise<AdminGalleryPhoto[]> {
-  const res = await fetch('/api/admin/gallery', { headers: adminHeaders(accessToken) });
-  return (await readJson<AdminGalleryListResponse>(res)).photos;
+  return drainPages(async (cursor) => {
+    const response = await listAdminGalleryPhotosPage({ cursor }, accessToken);
+    return { items: response.photos, nextCursor: response.nextCursor ?? null };
+  });
 }
 
 export async function listAdminGalleryAlbums(accessToken?: string): Promise<GalleryAlbum[]> {
@@ -477,9 +523,16 @@ export async function getAdminGalleryReactionStats(accessToken?: string): Promis
   return readJson<AdminGalleryReactionStats>(res);
 }
 
+export async function listAccountGalleryPhotosPage(page: GalleryPage, accessToken: string): Promise<AdminGalleryListResponse> {
+  const res = await fetch(`/api/account/gallery/photos${pageQuery(page)}`, { headers: authHeaders(accessToken) });
+  return readJson<AdminGalleryListResponse>(res);
+}
+
 export async function listAccountGalleryPhotos(accessToken: string): Promise<AdminGalleryPhoto[]> {
-  const res = await fetch('/api/account/gallery/photos', { headers: authHeaders(accessToken) });
-  return (await readJson<AdminGalleryListResponse>(res)).photos;
+  return drainPages(async (cursor) => {
+    const response = await listAccountGalleryPhotosPage({ cursor }, accessToken);
+    return { items: response.photos, nextCursor: response.nextCursor ?? null };
+  });
 }
 
 export async function uploadAccountGalleryPhoto(form: FormData, accessToken: string): Promise<AdminGalleryPhoto> {
