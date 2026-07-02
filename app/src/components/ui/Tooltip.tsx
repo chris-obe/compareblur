@@ -1,5 +1,6 @@
-import type { ReactNode } from 'react';
+import { useContext, type ReactNode } from 'react';
 import { tooltip, type TooltipKey } from '../../lib/tooltips';
+import { DropdownOpenContext } from './Dropdown';
 
 interface TooltipProps {
   tip?: TooltipKey;
@@ -12,7 +13,12 @@ interface TooltipProps {
 
 export function Tooltip({ tip, content, side = 'top', align = 'center', className = '', children }: TooltipProps) {
   const body = content ?? (tip ? tooltip(tip) : null);
+  const dropdownOpen = useContext(DropdownOpenContext);
   if (!body) return <>{children}</>;
+
+  if (dropdownOpen) {
+    return <span className={['relative inline-flex', className].join(' ')}>{children}</span>;
+  }
 
   return (
     <span className={['group/tooltip relative inline-flex', className].join(' ')}>

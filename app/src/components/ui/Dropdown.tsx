@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { createContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 
 interface DropdownRenderProps {
@@ -12,6 +12,8 @@ interface DropdownProps {
   className?: string;
   closeOnClick?: boolean;
 }
+
+export const DropdownOpenContext = createContext(false);
 
 // Tight, fast dropdown. Closes on outside click / Escape.
 export function Dropdown({ trigger, children, align = 'right', className = '', closeOnClick = true }: DropdownProps) {
@@ -34,30 +36,32 @@ export function Dropdown({ trigger, children, align = 'right', className = '', c
   }, [open]);
 
   return (
-    <div ref={ref} className="relative">
-      <button type="button" onClick={() => setOpen((o) => !o)} className="block">
-        {trigger}
-      </button>
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            initial={{ opacity: 0, y: -4 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -4 }}
-            transition={{ duration: 0.13, ease: 'easeOut' }}
-            className={[
-              'absolute z-50 mt-1 min-w-44 border bg-surface',
-              align === 'right' ? 'right-0' : 'left-0',
-              className,
-            ].join(' ')}
-            style={{ borderColor: 'var(--line)' }}
-            onClick={closeOnClick ? () => setOpen(false) : undefined}
-          >
-            {typeof children === 'function' ? children({ close }) : children}
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
+    <DropdownOpenContext.Provider value={open}>
+      <div ref={ref} className="relative">
+        <button type="button" onClick={() => setOpen((o) => !o)} className="block">
+          {trigger}
+        </button>
+        <AnimatePresence>
+          {open && (
+            <motion.div
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              transition={{ duration: 0.13, ease: 'easeOut' }}
+              className={[
+                'absolute z-50 mt-1 min-w-44 border bg-surface',
+                align === 'right' ? 'right-0' : 'left-0',
+                className,
+              ].join(' ')}
+              style={{ borderColor: 'var(--line)' }}
+              onClick={closeOnClick ? () => setOpen(false) : undefined}
+            >
+              {typeof children === 'function' ? children({ close }) : children}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    </DropdownOpenContext.Provider>
   );
 }
 
