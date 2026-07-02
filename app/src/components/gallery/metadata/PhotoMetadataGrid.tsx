@@ -65,10 +65,17 @@ interface MetadataCellData {
   tags?: string[];
 }
 
-type MetadataCustomCell = CustomCell<MetadataCellData>;
+interface MetadataPreviewCellData {
+  type: 'photo-preview';
+  rowId: string;
+  src?: string;
+  label: string;
+}
+
+type MetadataCustomCell = CustomCell<MetadataCellData | MetadataPreviewCellData>;
 
 const BASE_COLUMNS: MetadataColumn[] = [
-  { key: 'preview', title: '', width: 72, editor: 'image' },
+  { key: 'preview', title: '', width: 86, editor: 'image' },
   { key: 'title', title: 'Title', width: 180, grow: 1, editor: 'text' },
   { key: 'author', title: 'Author', width: 150, editor: 'text' },
   { key: 'camera', title: 'Camera', width: 220, grow: 1, editor: 'catalog' },
@@ -199,23 +206,17 @@ export function PhotoMetadataGrid({
       return { kind: GridCellKind.Text, allowOverlay: false, readonly: true, data: '', displayData: '' };
     }
     if (column.key === 'preview') {
-      if (!row.previewSrc) {
-        return {
-          kind: GridCellKind.Text,
-          allowOverlay: false,
-          readonly: true,
-          data: row.previewLabel ?? row.title,
-          displayData: row.previewLabel ? 'image' : '',
-          contentAlign: 'center',
-        };
-      }
       return {
-        kind: GridCellKind.Image,
+        kind: GridCellKind.Custom,
         allowOverlay: false,
         readonly: true,
-        data: [row.previewSrc],
-        displayData: [row.previewLabel ?? row.title],
-        rounding: 0,
+        copyData: row.previewLabel ?? row.title,
+        data: {
+          type: 'photo-preview',
+          rowId: row.id,
+          src: row.previewSrc,
+          label: row.previewLabel ?? row.title,
+        },
       };
     }
     if (column.editor === 'select' || column.editor === 'catalog' || column.editor === 'tags') {
@@ -285,6 +286,7 @@ export function PhotoMetadataGrid({
         rowMarkers={{ kind: 'both', checkboxStyle: 'square', width: 42 }}
         rowSelect="multi"
         rangeSelect="multi-rect"
+        cellActivationBehavior="single-click"
         fillHandle
         allowedFillDirections="orthogonal"
         freezeColumns={2}
@@ -342,41 +344,112 @@ function createMetadataCellRenderer({
 }): CustomRenderer<MetadataCustomCell> {
   return {
     kind: GridCellKind.Custom,
-    isMatch: (cell: CustomCell): cell is MetadataCustomCell => (cell.data as Partial<MetadataCellData> | undefined)?.type === 'photo-metadata',
+    isMatch: (cell: CustomCell): cell is MetadataCustomCell => {
+      const type = (cell.data as Partial<MetadataCellData | MetadataPreviewCellData> | undefined)?.type;
+      return type === 'photo-metadata' || type === 'photo-preview';
+    },
     draw: (args, cell) => {
+      if (cell.data.type === 'photo-preview') {
+        drawPreviewCell(args, cell.data);
+        return;
+      }
       drawTextCell(args, cell.data.display || '—', cell.contentAlign);
       if (cell.data.editor === 'select' || cell.data.editor === 'catalog') {
-        const { ctx, rect, theme } = args;
-        ctx.fillStyle = theme.textMedium;
-        ctx.font = theme.baseFontStyle;
-        ctx.fillText('v', rect.x + rect.width - 14, rect.y + Math.round(rect.height / 2) + 4);
+        drawDropdownChevron(args);
       }
     },
     provideEditor: (cell) => {
+      if (cell.data.type === 'photo-preview') return undefined;
       const row = rows.find((item) => item.id === cell.data.rowId);
       if (!row) return undefined;
       if (cell.data.editor === 'tags') {
-        return tagEditor(tags, onCreateTag);
+        return {
+          editor: tagEditor(tags, onCreateTag),
+          disablePadding: true,
+          styleOverride: { width: 384 },
+        };
       }
       if (cell.data.editor === 'catalog') {
         const options = cell.data.field === 'camera' ? cameraOptions(catalog.cameras) : lensOptionsForRow(row, catalog);
-        return catalogEditor(options);
+        return {
+          editor: catalogEditor(options),
+          disablePadding: true,
+          styleOverride: { width: 340 },
+        };
       }
-      return selectEditor(optionsForField(cell.data.field));
+      return {
+        editor: selectEditor(optionsForField(cell.data.field)),
+        disablePadding: true,
+        styleOverride: { width: 260 },
+      };
     },
     onPaste: (value, data) => ({
       ...data,
-      value,
-      selectedId: undefined,
-      display: value,
-      tags: data.field === 'tags' ? value.split(',').map((item) => item.trim()).filter(Boolean) : data.tags,
+      ...(data.type === 'photo-metadata'
+        ? {
+            value,
+            selectedId: undefined,
+            display: value,
+            tags: data.field === 'tags' ? value.split(',').map((item) => item.trim()).filter(Boolean) : data.tags,
+          }
+        : {}),
     }),
   };
 }
 
+function drawPreviewCell(
+  args: Parameters<NonNullable<CustomRenderer<MetadataCustomCell>['draw']>>[0],
+  data: MetadataPreviewCellData,
+) {
+  const { ctx, rect, theme, imageLoader, col, row } = args;
+  const size = Math.min(46, rect.height - 14, rect.width - 18);
+  const x = Math.round(rect.x + (rect.width - size) / 2);
+  const y = Math.round(rect.y + (rect.height - size) / 2);
+
+  ctx.fillStyle = theme.bgCellMedium;
+  ctx.fillRect(x, y, size, size);
+  ctx.strokeStyle = theme.borderColor;
+  ctx.strokeRect(x + 0.5, y + 0.5, size - 1, size - 1);
+
+  const image = data.src ? imageLoader.loadOrGetImage(data.src, col, row) : undefined;
+  if (image) {
+    const ratio = Math.max(size / image.width, size / image.height);
+    const width = image.width * ratio;
+    const height = image.height * ratio;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x, y, size, size);
+    ctx.clip();
+    ctx.drawImage(image, x + (size - width) / 2, y + (size - height) / 2, width, height);
+    ctx.restore();
+    return;
+  }
+
+  ctx.fillStyle = theme.textMedium;
+  ctx.font = theme.headerFontStyle;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(data.src ? '...' : 'IMG', x + size / 2, y + size / 2);
+  ctx.textAlign = 'left';
+}
+
+function drawDropdownChevron(args: Parameters<NonNullable<CustomRenderer<MetadataCustomCell>['draw']>>[0]) {
+  const { ctx, rect, theme } = args;
+  const centerX = rect.x + rect.width - 16;
+  const centerY = rect.y + rect.height / 2 + 1;
+  ctx.strokeStyle = theme.textMedium;
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.moveTo(centerX - 4, centerY - 2);
+  ctx.lineTo(centerX, centerY + 2);
+  ctx.lineTo(centerX + 4, centerY - 2);
+  ctx.stroke();
+}
+
 function catalogEditor(options: PhotoMetadataOption[]): ProvideEditorComponent<MetadataCustomCell> {
   function CatalogEditor({ value, onFinishedEditing }: Parameters<ProvideEditorComponent<MetadataCustomCell>>[0]) {
-    const [draft, setDraft] = useState(value.data.value);
+    const cellData = value.data as MetadataCellData;
+    const [draft, setDraft] = useState(cellData.value);
     const filtered = useMemo(() => {
       const needle = draft.trim().toLowerCase();
       return options
@@ -389,16 +462,19 @@ function catalogEditor(options: PhotoMetadataOption[]): ProvideEditorComponent<M
         ...value,
         copyData: nextValue,
         data: {
-          ...value.data,
+          ...cellData,
           value: nextValue,
-          display: nextValue || '—',
+          display: nextValue || '-',
           selectedId,
         },
       });
     };
 
     return (
-      <div className="w-80 border border-line bg-surface shadow-none">
+      <div className="w-full border border-line bg-surface shadow-none">
+        <div className="border-b border-line px-3 py-2">
+          <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted">Search catalog</div>
+        </div>
         <input
           autoFocus
           value={draft}
@@ -407,7 +483,7 @@ function catalogEditor(options: PhotoMetadataOption[]): ProvideEditorComponent<M
             if (event.key === 'Enter') finish();
             if (event.key === 'Escape') onFinishedEditing(undefined);
           }}
-          className="h-9 w-full border-b border-line bg-transparent px-2 text-xs outline-none"
+          className="h-10 w-full border-b border-line bg-transparent px-3 text-xs outline-none"
           placeholder="Search catalog or type free text"
         />
         <div className="max-h-56 overflow-y-auto">
@@ -424,13 +500,13 @@ function catalogEditor(options: PhotoMetadataOption[]): ProvideEditorComponent<M
           ))}
           {filtered.length === 0 && (
             <button type="button" onClick={() => finish()} className="block w-full px-3 py-3 text-left text-xs text-muted hover:bg-faint">
-              Keep “{draft}” as manual text
+              Keep "{draft}" as manual text
             </button>
           )}
         </div>
         <div className="flex justify-end gap-2 border-t border-line p-2">
           <Button type="button" onClick={() => finish()}>
-            Use text
+            Use manual text
           </Button>
         </div>
       </div>
@@ -441,8 +517,12 @@ function catalogEditor(options: PhotoMetadataOption[]): ProvideEditorComponent<M
 
 function selectEditor(options: PhotoMetadataOption[]): ProvideEditorComponent<MetadataCustomCell> {
   function SelectEditor({ value, onFinishedEditing }: Parameters<ProvideEditorComponent<MetadataCustomCell>>[0]) {
+    const cellData = value.data as MetadataCellData;
     return (
-      <div className="w-56 border border-line bg-surface">
+      <div className="w-full border border-line bg-surface">
+        <div className="border-b border-line px-3 py-2">
+          <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted">Choose value</div>
+        </div>
         {options.map((option) => (
           <button
             key={option.value}
@@ -451,7 +531,7 @@ function selectEditor(options: PhotoMetadataOption[]): ProvideEditorComponent<Me
               ...value,
               copyData: option.value,
               data: {
-                ...value.data,
+                ...cellData,
                 value: option.value,
                 display: option.label,
                 selectedId: option.value,
@@ -459,7 +539,7 @@ function selectEditor(options: PhotoMetadataOption[]): ProvideEditorComponent<Me
             })}
             className={[
               'block w-full px-3 py-2 text-left text-xs hover:bg-faint',
-              option.value === value.data.value ? 'font-bold' : '',
+              option.value === cellData.value ? 'font-bold' : '',
             ].join(' ')}
           >
             {option.label}
@@ -473,9 +553,10 @@ function selectEditor(options: PhotoMetadataOption[]): ProvideEditorComponent<Me
 
 function tagEditor(tags: TagOption[], onCreateTag?: (label: string) => Promise<TagOption>): ProvideEditorComponent<MetadataCustomCell> {
   function TagEditor({ value, onFinishedEditing }: Parameters<ProvideEditorComponent<MetadataCustomCell>>[0]) {
-    const [selected, setSelected] = useState(value.data.tags ?? []);
+    const cellData = value.data as MetadataCellData;
+    const [selected, setSelected] = useState(cellData.tags ?? []);
     return (
-      <div className="w-96 border border-line bg-surface p-3">
+      <div className="w-full border border-line bg-surface p-3">
         <TagPicker tags={tags} value={selected} onChange={setSelected} onCreateTag={onCreateTag} />
         <div className="mt-3 flex justify-end gap-2">
           <Button type="button" onClick={() => onFinishedEditing(undefined)}>
@@ -488,7 +569,7 @@ function tagEditor(tags: TagOption[], onCreateTag?: (label: string) => Promise<T
               ...value,
               copyData: selected.join(', '),
               data: {
-                ...value.data,
+                ...cellData,
                 value: selected.join(', '),
                 display: selected.length ? selected.join(', ') : 'No tags',
                 tags: selected,
