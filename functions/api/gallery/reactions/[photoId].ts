@@ -24,6 +24,18 @@ export const onRequestPut: PagesFunction<Env> = async ({ env, params, request })
     return json({ error: 'invalid reaction' }, { status: 400 });
   }
 
+  // Per-user write cap: reacting is bursty but human-paced; anything past
+  // this in a minute is scripted table bloat. Uses idx_gallery_reactions_user_updated.
+  const windowStart = new Date(Date.now() - 60_000).toISOString();
+  const recent = await env.GALLERY_DB.prepare(
+    'SELECT COUNT(*) AS count FROM gallery_reactions WHERE user_sub = ? AND updated_at > ?',
+  )
+    .bind(identity.sub, windowStart)
+    .first<{ count: number }>();
+  if ((recent?.count ?? 0) >= 30) {
+    return json({ error: 'too many reactions, slow down' }, { status: 429 });
+  }
+
   const now = new Date().toISOString();
   await env.GALLERY_DB.prepare(
     `INSERT INTO gallery_reactions (

@@ -547,11 +547,26 @@ export function ownerNameForIdentity(identity: { name?: string; email?: string; 
   return cleanPublicOwnerName(subFallback) || 'blur account';
 }
 
+// Album passwords use PBKDF2 (slow, brute-force-resistant if the DB leaks).
+// Stored as `pbkdf2$<iterations>$<hex>`; bare-hex rows are legacy single-round
+// SHA-256 and keep verifying until the password is next changed.
+const ALBUM_PASSWORD_ITERATIONS = 100_000;
+
+async function pbkdf2Hex(password: string, salt: string, iterations: number) {
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', hash: 'SHA-256', salt: new TextEncoder().encode(salt), iterations },
+    key,
+    256,
+  );
+  return [...new Uint8Array(bits)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
 export async function hashAlbumPassword(password: string) {
   const trimmed = password.trim();
   if (!trimmed) return null;
   const salt = crypto.randomUUID();
-  const hash = await sha256(`${salt}:${trimmed}`);
+  const hash = `pbkdf2$${ALBUM_PASSWORD_ITERATIONS}$${await pbkdf2Hex(trimmed, salt, ALBUM_PASSWORD_ITERATIONS)}`;
   return { salt, hash };
 }
 
@@ -559,7 +574,26 @@ export async function verifyAlbumPassword(row: Pick<GalleryAlbumRow, 'password_h
   if (!row.password_hash) return true;
   const trimmed = typeof password === 'string' ? password.trim() : '';
   if (!trimmed || !row.password_salt) return false;
-  return (await sha256(`${row.password_salt}:${trimmed}`)) === row.password_hash;
+
+  if (row.password_hash.startsWith('pbkdf2$')) {
+    const [, iterationsRaw, stored] = row.password_hash.split('$');
+    const iterations = Number(iterationsRaw);
+    if (!Number.isFinite(iterations) || iterations < 1 || !stored) return false;
+    const computed = await pbkdf2Hex(trimmed, row.password_salt, iterations);
+    return timingSafeEqualHex(computed, stored);
+  }
+
+  // Legacy rows: salted single-round SHA-256.
+  return timingSafeEqualHex(await sha256(`${row.password_salt}:${trimmed}`), row.password_hash);
+}
+
+// Constant-time comparison of equal-purpose hex digests. Comparing digests
+// (not raw secrets) already blunts timing attacks; this removes them entirely.
+function timingSafeEqualHex(a: string, b: string) {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i += 1) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
 }
 
 async function albumPhotos(
@@ -609,7 +643,7 @@ export async function verifyAlbumAccessToken(
   const expiresAt = Number(expiresAtRaw);
   if (!Number.isFinite(expiresAt) || !signature || expiresAt < Date.now()) return false;
   const expected = await sha256(`${row.slug}:${expiresAt}:${row.password_hash}`);
-  return expected === signature;
+  return timingSafeEqualHex(expected, signature);
 }
 
 function albumPhotoFromJoinedRow(

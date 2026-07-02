@@ -353,7 +353,12 @@ async function requireAdmin(request, env) {
   }
   const auth = request.headers.get('authorization') ?? '';
   const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
-  if (token !== env.CATALOG_ADMIN_TOKEN) throw httpError(401, 'unauthorized');
+  // Hash both sides then compare without early exit, so the comparison time
+  // cannot leak how much of the token matched.
+  const [provided, expected] = await Promise.all([sha256(token), sha256(env.CATALOG_ADMIN_TOKEN)]);
+  let diff = token ? 0 : 1;
+  for (let i = 0; i < provided.length; i += 1) diff |= provided.charCodeAt(i) ^ expected.charCodeAt(i);
+  if (diff !== 0) throw httpError(401, 'unauthorized');
 }
 
 async function sha256(text) {

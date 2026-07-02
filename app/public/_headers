@@ -1,0 +1,24 @@
+# Baseline security headers for every response. frame-ancestors 'none' blocks
+# clickjacking; the /embed/* override below re-allows framing there, because
+# iframe embedding is the product on those routes.
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  Content-Security-Policy: frame-ancestors 'none'
+
+/embed/*
+  ! Content-Security-Policy
+  Content-Security-Policy: frame-ancestors *
+
+/admin
+  Cache-Control: no-store
+
+/admin/*
+  Cache-Control: no-store
+
+/settings
+  Cache-Control: no-store
+
+/settings/*
+  Cache-Control: no-store

@@ -38,17 +38,26 @@ export interface AdminIdentity {
 const JWKS_CACHE = new Map<string, { expires: number; keys: JsonWebKey[] }>();
 const JWKS_CACHE_MS = 10 * 60 * 1000;
 
-export function requireAdminRequest(request: Request, env: AdminEnv): Response | null {
+export async function requireAdminRequest(request: Request, env: AdminEnv): Promise<Response | null> {
   if (env.ADMIN_API_OPEN === 'true') return null;
 
   // Cloudflare Access adds this only after an Access policy has admitted the request.
   if (request.headers.get('cf-access-authenticated-user-email')) return null;
 
   const token = env.ADMIN_API_TOKEN;
-  const auth = request.headers.get('authorization') ?? '';
-  if (token && auth === `Bearer ${token}`) return null;
+  const bearer = bearerToken(request);
+  if (token && bearer && await tokensMatch(bearer, token)) return null;
 
   return json({ error: 'admin authorization required' }, { status: 401 });
+}
+
+// Raw secret comparison must not leak match length through timing: hash both
+// sides first, then compare digests without early exit.
+async function tokensMatch(provided: string, expected: string) {
+  const [a, b] = await Promise.all([sha256(provided), sha256(expected)]);
+  let diff = 0;
+  for (let i = 0; i < a.length; i += 1) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
 }
 
 export async function requireAuth0User(request: Request, env: AdminEnv): Promise<AdminIdentity> {
@@ -94,14 +103,13 @@ export async function requireAdmin(
   }
 
   const token = env.ADMIN_API_TOKEN;
-  const auth = request.headers.get('authorization') ?? '';
-  if (token && auth === `Bearer ${token}`) {
+  const bearer = bearerToken(request);
+  if (token && bearer && await tokensMatch(bearer, token)) {
     return { sub: 'admin-api-token', permissions: requiredPermissions };
   }
 
   const hashedToken = env.ADMIN_API_TOKEN_SHA256;
-  const bearer = bearerToken(request);
-  if (hashedToken && bearer && await sha256(bearer) === hashedToken) {
+  if (hashedToken && bearer && await tokensMatch(await sha256(bearer), hashedToken)) {
     return { sub: 'admin-api-token-hash', permissions: requiredPermissions };
   }
 
